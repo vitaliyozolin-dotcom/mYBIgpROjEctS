@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import init_db
+from app.models import user, lead, comment, task  # noqa: must load before routers
 from app.routers import auth, leads, comments, tasks, webhooks
 from app.services.auth import hash_password
 from sqlalchemy import select
