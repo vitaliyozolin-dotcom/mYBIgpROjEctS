@@ -1,46 +1,47 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragOverlay,
+  DndContext, closestCenter, DragOverlay,
+  useSensor, useSensors, MouseSensor, TouchSensor, PointerSensor,
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useDroppable } from "@dnd-kit/core";
-import Header from "../components/Header.jsx";
 import LeadCard from "../components/LeadCard.jsx";
 import NewLeadModal from "../components/NewLeadModal.jsx";
 import api from "../api/client.js";
 import toast from "react-hot-toast";
 
 const STAGES = [
-  { id: "new", label: "Новые", color: "border-gray-300 bg-gray-50" },
-  { id: "contacted", label: "Связались", color: "border-blue-300 bg-blue-50" },
-  { id: "qualified", label: "Квалифицированы", color: "border-yellow-300 bg-yellow-50" },
-  { id: "proposal", label: "Предложение", color: "border-orange-300 bg-orange-50" },
-  { id: "negotiation", label: "Переговоры", color: "border-purple-300 bg-purple-50" },
-  { id: "won", label: "Сделка закрыта", color: "border-green-400 bg-green-50" },
-  { id: "lost", label: "Отказ", color: "border-red-300 bg-red-50" },
+  { id: "new", label: "Новые", dot: "bg-slate-400" },
+  { id: "contacted", label: "Связались", dot: "bg-blue-400" },
+  { id: "qualified", label: "Квалифицированы", dot: "bg-yellow-400" },
+  { id: "proposal", label: "Предложение", dot: "bg-orange-400" },
+  { id: "negotiation", label: "Переговоры", dot: "bg-purple-400" },
+  { id: "won", label: "Сделка ✓", dot: "bg-emerald-500" },
+  { id: "lost", label: "Отказ", dot: "bg-red-400" },
 ];
 
-function Column({ stage, leads, activeId }) {
-  const { setNodeRef } = useDroppable({ id: stage.id });
+function Column({ stage, leads }) {
+  const { setNodeRef, isOver } = useDroppable({ id: stage.id });
+  const total = leads.reduce((s, l) => s + (l.budget || 0), 0);
 
   return (
-    <div className={`flex flex-col rounded-xl border-2 ${stage.color} min-w-[220px] w-56 shrink-0`}>
-      <div className="px-3 py-2 flex items-center justify-between">
-        <span className="font-semibold text-sm text-gray-700">{stage.label}</span>
-        <span className="text-xs text-gray-400 bg-white rounded-full px-2 py-0.5 border">
-          {leads.length}
-        </span>
+    <div className="flex flex-col min-w-[210px] w-52 shrink-0">
+      <div className="flex items-center gap-2 mb-2 px-1">
+        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${stage.dot}`} />
+        <span className="font-semibold text-slate-700 text-sm flex-1 truncate">{stage.label}</span>
+        <span className="text-xs text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{leads.length}</span>
       </div>
-      <div ref={setNodeRef} className="flex flex-col gap-2 p-2 min-h-[100px] flex-1">
+      {total > 0 && (
+        <p className="text-xs text-slate-400 px-1 mb-2">{total.toLocaleString("ru-RU")} ₽</p>
+      )}
+      <div
+        ref={setNodeRef}
+        className={`flex flex-col gap-2 flex-1 rounded-xl p-2 min-h-[120px] transition-colors ${
+          isOver ? "bg-indigo-50 border-2 border-indigo-200 border-dashed" : "bg-slate-100/60"
+        }`}
+      >
         <SortableContext items={leads.map((l) => l.id)} strategy={verticalListSortingStrategy}>
-          {leads.map((lead) => (
-            <LeadCard key={lead.id} lead={lead} />
-          ))}
+          {leads.map((lead) => <LeadCard key={lead.id} lead={lead} />)}
         </SortableContext>
       </div>
     </div>
@@ -49,81 +50,72 @@ function Column({ stage, leads, activeId }) {
 
 export default function Board() {
   const [leads, setLeads] = useState([]);
-  const [showNewModal, setShowNewModal] = useState(false);
+  const [showNew, setShowNew] = useState(false);
   const [activeId, setActiveId] = useState(null);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  const fetchLeads = useCallback(async () => {
-    try {
-      const { data } = await api.get("/leads");
-      setLeads(data);
-    } catch {
-      toast.error("Не удалось загрузить лиды");
-    }
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } })
+  );
+
+  const fetchLeads = useCallback(() => {
+    api.get("/leads").then((r) => setLeads(r.data)).catch(() => toast.error("Не удалось загрузить лиды"));
   }, []);
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
-  function getLeadsForStage(stageId) {
-    return leads.filter((l) => l.stage === stageId);
-  }
+  function findLeadById(id) { return leads.find((l) => l.id === id); }
 
-  function findLeadById(id) {
-    return leads.find((l) => l.id === id);
-  }
-
-  function findStageByLeadId(id) {
-    return leads.find((l) => l.id === id)?.stage;
-  }
+  function findStageByLeadId(id) { return leads.find((l) => l.id === id)?.stage; }
 
   async function handleDragEnd({ active, over }) {
     setActiveId(null);
     if (!over) return;
-
     const lead = findLeadById(active.id);
     const newStage = STAGES.find((s) => s.id === over.id)?.id || findStageByLeadId(over.id);
-
     if (!lead || !newStage || lead.stage === newStage) return;
-
-    setLeads((prev) => prev.map((l) => (l.id === lead.id ? { ...l, stage: newStage } : l)));
-
+    setLeads((prev) => prev.map((l) => l.id === lead.id ? { ...l, stage: newStage } : l));
     try {
       await api.patch(`/leads/${lead.id}`, { stage: newStage });
     } catch {
-      toast.error("Ошибка при перемещении");
+      toast.error("Ошибка перемещения");
       fetchLeads();
     }
   }
 
   const activeLead = activeId ? findLeadById(activeId) : null;
+  const total = leads.reduce((s, l) => s + (l.budget || 0), 0);
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
-      <Header />
-      <div className="flex items-center justify-between px-6 py-4">
-        <h2 className="text-xl font-bold text-gray-800">Воронка продаж</h2>
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Воронка продаж</h1>
+          <p className="text-sm text-slate-400 mt-0.5">{leads.length} лидов · {total.toLocaleString("ru-RU")} ₽ в работе</p>
+        </div>
         <button
-          onClick={() => setShowNewModal(true)}
-          className="bg-blue-800 hover:bg-blue-900 text-white text-sm font-semibold px-4 py-2 rounded-lg transition"
+          onClick={() => setShowNew(true)}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
         >
           + Новый лид
         </button>
       </div>
 
-      <div className="flex-1 overflow-x-auto px-6 pb-6">
+      {/* Board */}
+      <div className="flex-1 overflow-x-auto p-5">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
           onDragStart={({ active }) => setActiveId(active.id)}
           onDragEnd={handleDragEnd}
         >
-          <div className="flex gap-4 h-full">
+          <div className="flex gap-4 h-full pb-4">
             {STAGES.map((stage) => (
               <Column
                 key={stage.id}
                 stage={stage}
-                leads={getLeadsForStage(stage.id)}
-                activeId={activeId}
+                leads={leads.filter((l) => l.stage === stage.id)}
               />
             ))}
           </div>
@@ -133,10 +125,10 @@ export default function Board() {
         </DndContext>
       </div>
 
-      {showNewModal && (
+      {showNew && (
         <NewLeadModal
-          onClose={() => setShowNewModal(false)}
-          onCreated={() => { setShowNewModal(false); fetchLeads(); }}
+          onClose={() => setShowNew(false)}
+          onCreated={() => { setShowNew(false); fetchLeads(); }}
         />
       )}
     </div>
