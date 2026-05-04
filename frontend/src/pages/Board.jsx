@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
   DndContext, closestCenter, DragOverlay,
-  useSensor, useSensors, MouseSensor, TouchSensor, PointerSensor,
+  useSensor, useSensors, MouseSensor, TouchSensor,
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useDroppable } from "@dnd-kit/core";
@@ -25,19 +25,17 @@ function Column({ stage, leads }) {
   const total = leads.reduce((s, l) => s + (l.budget || 0), 0);
 
   return (
-    <div className="flex flex-col min-w-[210px] w-52 shrink-0">
-      <div className="flex items-center gap-2 mb-2 px-1">
-        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${stage.dot}`} />
-        <span className="font-semibold text-slate-700 text-sm flex-1 truncate">{stage.label}</span>
-        <span className="text-xs text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{leads.length}</span>
+    <div className="flex flex-col w-[180px] sm:w-52 shrink-0">
+      <div className="flex items-center gap-1.5 mb-1.5 px-0.5">
+        <span className={`w-2 h-2 rounded-full shrink-0 ${stage.dot}`} />
+        <span className="font-semibold text-slate-700 text-xs flex-1 truncate">{stage.label}</span>
+        <span className="text-xs text-slate-400 bg-white rounded-full px-1.5 border border-slate-200">{leads.length}</span>
       </div>
-      {total > 0 && (
-        <p className="text-xs text-slate-400 px-1 mb-2">{total.toLocaleString("ru-RU")} ₽</p>
-      )}
+      {total > 0 && <p className="text-[10px] text-slate-400 px-0.5 mb-1.5">{total.toLocaleString("ru-RU")} ₽</p>}
       <div
         ref={setNodeRef}
-        className={`flex flex-col gap-2 flex-1 rounded-xl p-2 min-h-[120px] transition-colors ${
-          isOver ? "bg-indigo-50 border-2 border-indigo-200 border-dashed" : "bg-slate-100/60"
+        className={`flex flex-col gap-2 flex-1 rounded-xl p-2 min-h-[100px] transition-colors ${
+          isOver ? "bg-indigo-50 border-2 border-indigo-300 border-dashed" : "bg-slate-100/70"
         }`}
       >
         <SortableContext items={leads.map((l) => l.id)} strategy={verticalListSortingStrategy}>
@@ -59,13 +57,12 @@ export default function Board() {
   );
 
   const fetchLeads = useCallback(() => {
-    api.get("/leads").then((r) => setLeads(r.data)).catch(() => toast.error("Не удалось загрузить лиды"));
+    api.get("/leads").then((r) => setLeads(r.data)).catch(() => toast.error("Не удалось загрузить"));
   }, []);
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
   function findLeadById(id) { return leads.find((l) => l.id === id); }
-
   function findStageByLeadId(id) { return leads.find((l) => l.id === id)?.stage; }
 
   async function handleDragEnd({ active, over }) {
@@ -78,58 +75,53 @@ export default function Board() {
     try {
       await api.patch(`/leads/${lead.id}`, { stage: newStage });
     } catch {
-      toast.error("Ошибка перемещения");
+      toast.error("Ошибка");
       fetchLeads();
     }
   }
 
   const activeLead = activeId ? findLeadById(activeId) : null;
-  const total = leads.reduce((s, l) => s + (l.budget || 0), 0);
 
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Воронка продаж</h1>
-          <p className="text-sm text-slate-400 mt-0.5">{leads.length} лидов · {total.toLocaleString("ru-RU")} ₽ в работе</p>
+          <h1 className="text-base font-bold text-slate-900">Воронка продаж</h1>
+          <p className="text-xs text-slate-400">{leads.length} лидов</p>
         </div>
         <button
           onClick={() => setShowNew(true)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
+          className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-3 py-2 rounded-xl transition"
         >
-          + Новый лид
+          + Лид
         </button>
       </div>
 
-      {/* Board */}
-      <div className="flex-1 overflow-x-auto p-5">
+      {/* Hint for mobile */}
+      <div className="md:hidden px-4 py-2 bg-indigo-50 border-b border-indigo-100">
+        <p className="text-xs text-indigo-600">Удерживайте карточку 0.2 сек для перетаскивания</p>
+      </div>
+
+      {/* Board - horizontal scroll */}
+      <div className="flex-1 overflow-x-auto overflow-y-auto p-3">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
           onDragStart={({ active }) => setActiveId(active.id)}
           onDragEnd={handleDragEnd}
         >
-          <div className="flex gap-4 h-full pb-4">
+          <div className="flex gap-3 h-full pb-2 min-w-max">
             {STAGES.map((stage) => (
-              <Column
-                key={stage.id}
-                stage={stage}
-                leads={leads.filter((l) => l.stage === stage.id)}
-              />
+              <Column key={stage.id} stage={stage} leads={leads.filter((l) => l.stage === stage.id)} />
             ))}
           </div>
-          <DragOverlay>
-            {activeLead && <LeadCard lead={activeLead} />}
-          </DragOverlay>
+          <DragOverlay>{activeLead && <LeadCard lead={activeLead} />}</DragOverlay>
         </DndContext>
       </div>
 
       {showNew && (
-        <NewLeadModal
-          onClose={() => setShowNew(false)}
-          onCreated={() => { setShowNew(false); fetchLeads(); }}
-        />
+        <NewLeadModal onClose={() => setShowNew(false)} onCreated={() => { setShowNew(false); fetchLeads(); }} />
       )}
     </div>
   );

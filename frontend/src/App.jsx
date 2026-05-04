@@ -1,5 +1,5 @@
 import React from "react";
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import Login from "./pages/Login.jsx";
 import Board from "./pages/Board.jsx";
@@ -7,6 +7,7 @@ import LeadDetail from "./pages/LeadDetail.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import Analytics from "./pages/Analytics.jsx";
 import Sidebar from "./components/Sidebar.jsx";
+import BottomNav from "./components/BottomNav.jsx";
 
 function PrivateRoute({ children }) {
   return localStorage.getItem("token") ? children : <Navigate to="/login" replace />;
@@ -15,8 +16,19 @@ function PrivateRoute({ children }) {
 function AppLayout({ children }) {
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
-      <Sidebar />
-      <div className="flex-1 overflow-auto">{children}</div>
+      {/* Sidebar — only on desktop */}
+      <div className="hidden md:flex">
+        <Sidebar />
+      </div>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 overflow-auto pb-16 md:pb-0">
+          {children}
+        </div>
+        {/* Bottom nav — only on mobile */}
+        <div className="md:hidden">
+          <BottomNav />
+        </div>
+      </div>
     </div>
   );
 }
