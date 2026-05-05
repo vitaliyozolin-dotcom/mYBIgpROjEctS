@@ -28,11 +28,15 @@ STAGE_LABELS = {
     "lost": "Отказ / Архив ❌",
 }
 
-SCORE_RECALC_FIELDS = {"budget", "tags", "stage", "next_action", "next_date", "source"}
+SCORE_RECALC_FIELDS = {
+    "budget", "tags", "stage", "next_action", "next_date", "source",
+    "property_type", "location", "rooms", "desired_area", "purchase_goal",
+    "payment_method", "mortgage_status", "purchase_timeline", "main_objection",
+}
 
 
 def calculate_lead_score(lead: Lead) -> int:
-    """Расчётный score лида: деньги + намерение + стадия + дисциплина следующего шага."""
+    """Расчётный score лида: деньги + намерение + стадия + заполненность профиля + следующий шаг."""
     score = 0
     budget = lead.budget or 0
     tags = lead.tags or []
@@ -82,6 +86,20 @@ def calculate_lead_score(lead: Lead) -> int:
     if lead.next_date:
         score += 5
 
+    profile_fields = [
+        lead.property_type,
+        lead.location,
+        lead.purchase_goal,
+        lead.payment_method,
+        lead.purchase_timeline,
+    ]
+    score += min(10, sum(2 for field in profile_fields if field))
+
+    if lead.mortgage_status and lead.mortgage_status != "none":
+        score += 5
+    if lead.main_objection:
+        score += 3
+
     if lead.source in {"partners", "referral"}:
         score += 5
 
@@ -114,7 +132,6 @@ async def list_leads(
     q = select(Lead).options(*LOAD_OPTS).order_by(Lead.created_at.desc())
     if stage:
         q = q.where(Lead.stage == stage)
-    # Менеджер видит только свои лиды, админ — все
     if current_user.role == "manager":
         q = q.where(Lead.assigned_to_id == current_user.id)
     result = await db.execute(q)
