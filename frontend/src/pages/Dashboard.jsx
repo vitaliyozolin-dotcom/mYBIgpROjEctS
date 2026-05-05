@@ -3,110 +3,200 @@ import { useNavigate } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 import api from "../api/client.js";
+import { askAI } from "../api/ai.js";
 
 const STAGE_LABELS = {
   new: "Новый", contacted: "Связались", qualified: "Квалифицирован",
   proposal: "Предложение", negotiation: "Переговоры", won: "Сделка", lost: "Отказ",
 };
+
 const STAGE_COLORS = {
-  new: "bg-slate-100 text-slate-600", contacted: "bg-blue-100 text-blue-700",
-  qualified: "bg-yellow-100 text-yellow-700", proposal: "bg-orange-100 text-orange-700",
-  negotiation: "bg-purple-100 text-purple-700", won: "bg-emerald-100 text-emerald-700",
-  lost: "bg-red-100 text-red-600",
+  new: "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
+  contacted: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  qualified: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
+  proposal: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+  negotiation: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+  won: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  lost: "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300",
 };
-const SOURCE_LABELS = {
-  manual: "Вручную", website: "Сайт", avito: "Авито",
-  telegram: "Telegram", vk: "ВКонтакте", whatsapp: "WhatsApp", instagram: "Instagram",
-};
 
-export default function Dashboard() {
-  const [leads, setLeads] = useState([]);
-  const navigate = useNavigate();
+function ScoreDot({ score }) {
+  const c = score >= 80 ? "bg-emerald-500" : score >= 50 ? "bg-amber-400" : "bg-red-400";
+  return <span className={`w-2 h-2 rounded-full shrink-0 ${c}`} title={`Score: ${score}`} />;
+}
 
-  useEffect(() => { api.get("/leads").then((r) => setLeads(r.data)).catch(() => {}); }, []);
-
-  const total = leads.length;
-  const won = leads.filter((l) => l.stage === "won").length;
-  const active = leads.filter((l) => !["won", "lost"].includes(l.stage)).length;
-  const wonValue = leads.filter((l) => l.stage === "won" && l.budget).reduce((s, l) => s + l.budget, 0);
-  const conversion = total > 0 ? Math.round((won / total) * 100) : 0;
-  const recent = [...leads].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 8);
-
+function StatCard({ label, value, sub, accent }) {
   return (
-    <div className="p-4 max-w-2xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-5 pt-1">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">Главная</h1>
-          <p className="text-slate-400 text-xs mt-0.5">Инвест Недвижимость</p>
-        </div>
-        <button
-          onClick={() => navigate("/board")}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
-        >
-          + Лид
-        </button>
-      </div>
-
-      {/* Stats 2x2 */}
-      <div className="grid grid-cols-2 gap-3 mb-5">
-        <StatCard label="Лидов" value={total} color="text-slate-900" />
-        <StatCard label="В работе" value={active} color="text-indigo-600" />
-        <StatCard label="Конверсия" value={`${conversion}%`} color={conversion >= 20 ? "text-emerald-600" : "text-amber-600"} />
-        <StatCard
-          label="Сумма сделок"
-          value={wonValue > 0 ? `${(wonValue / 1_000_000).toFixed(1)}M ₽` : "—"}
-          color="text-emerald-600"
-        />
-      </div>
-
-      {/* Recent leads */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-          <h2 className="font-semibold text-slate-800 text-sm">Последние лиды</h2>
-          <button onClick={() => navigate("/board")} className="text-xs text-indigo-600">Все →</button>
-        </div>
-        {recent.length === 0 ? (
-          <div className="py-10 text-center">
-            <p className="text-slate-400 text-sm">Лидов пока нет</p>
-            <button onClick={() => navigate("/board")} className="mt-3 text-sm text-indigo-600 font-semibold">
-              Добавить первый лид
-            </button>
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-50">
-            {recent.map((lead) => (
-              <div
-                key={lead.id}
-                onClick={() => navigate(`/leads/${lead.id}`)}
-                className="flex items-center gap-3 px-4 py-3 active:bg-slate-50 cursor-pointer"
-              >
-                <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 font-bold text-sm flex items-center justify-center shrink-0">
-                  {lead.name[0].toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-slate-900 text-sm truncate">{lead.name}</p>
-                  <p className="text-xs text-slate-400 truncate">
-                    {SOURCE_LABELS[lead.source] || lead.source} · {formatDistanceToNow(new Date(lead.created_at), { locale: ru, addSuffix: true })}
-                  </p>
-                </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${STAGE_COLORS[lead.stage]}`}>
-                  {STAGE_LABELS[lead.stage]}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+    <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-100 dark:border-slate-700 shadow-sm">
+      <p className="text-xs text-slate-400 dark:text-slate-500 mb-1">{label}</p>
+      <p className={`text-2xl font-bold ${accent || "text-slate-900 dark:text-slate-100"}`}>{value}</p>
+      {sub && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{sub}</p>}
     </div>
   );
 }
 
-function StatCard({ label, value, color }) {
+export default function Dashboard() {
+  const navigate = useNavigate();
+  const [leads, setLeads] = useState([]);
+  const [me, setMe] = useState(null);
+  const [aiInsights, setAiInsights] = useState([]);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiReady, setAiReady] = useState(false);
+
+  useEffect(() => {
+    Promise.all([api.get("/leads"), api.get("/auth/me")]).then(([l, m]) => {
+      setLeads(l.data);
+      setMe(m.data);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (leads.length === 0 || aiReady) return;
+    generateInsights();
+  }, [leads]);
+
+  async function generateInsights() {
+    setAiLoading(true);
+    try {
+      const summary = leads.slice(0, 8).map((l) =>
+        `${l.name} (${STAGE_LABELS[l.stage] || l.stage}, score:${l.score ?? 50})`
+      ).join("; ");
+      const text = await askAI(
+        [{
+          role: "user",
+          content: `Дай ровно 3 краткие подсказки менеджеру на сегодня по лидам: ${summary}. Каждая подсказка — одна строка, начинается с эмодзи.`,
+        }]
+      );
+      const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 5).slice(0, 3);
+      setAiInsights(lines);
+      setAiReady(true);
+    } catch {
+      setAiInsights([]);
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  const active = leads.filter((l) => l.stage !== "won" && l.stage !== "lost");
+  const won = leads.filter((l) => l.stage === "won");
+  const conversion = leads.length ? Math.round((won.length / leads.length) * 100) : 0;
+  const pipeline = active.reduce((s, l) => s + (l.budget || 0), 0);
+  const revenue = won.reduce((s, l) => s + (l.budget || 0), 0);
+
+  const fmt = (n) =>
+    n >= 1e6 ? (n / 1e6).toFixed(1) + "M ₽" : n >= 1000 ? Math.round(n / 1000) + "K ₽" : n + " ₽";
+
+  const hotLeads = leads
+    .filter((l) => l.stage !== "won" && l.stage !== "lost")
+    .sort((a, b) => (b.score ?? 50) - (a.score ?? 50))
+    .slice(0, 5);
+
   return (
-    <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
-      <p className="text-slate-400 text-xs mb-1">{label}</p>
-      <p className={`text-2xl font-bold ${color}`}>{value}</p>
+    <div className="h-full overflow-auto bg-slate-50 dark:bg-slate-950">
+      {/* Header */}
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-5 py-4">
+        <h1 className="font-bold text-slate-900 dark:text-slate-100 text-xl">
+          {me ? `Привет, ${me.name.split(" ")[0]} 👋` : "Главная"}
+        </h1>
+        <p className="text-sm text-slate-400 dark:text-slate-500 mt-0.5">
+          {new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" })}
+        </p>
+      </div>
+
+      <div className="p-4 space-y-4 max-w-2xl mx-auto">
+        {/* Stats */}
+        <div className="grid grid-cols-2 gap-3">
+          <StatCard label="Всего лидов" value={leads.length} sub={`${active.length} активных`} />
+          <StatCard label="В воронке" value={pipeline ? fmt(pipeline) : "—"}
+            sub="потенциал" accent="text-blue-600 dark:text-blue-400" />
+          <StatCard label="Конверсия" value={conversion + "%"} sub={`${won.length} сделок`}
+            accent={conversion >= 20 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"} />
+          <StatCard label="Выручка" value={revenue ? fmt(revenue) : "—"}
+            sub="закрытые сделки" accent="text-emerald-600 dark:text-emerald-400" />
+        </div>
+
+        {/* AI Insights */}
+        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-950/60 dark:to-purple-950/60 border border-indigo-100 dark:border-indigo-800/40 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span>✨</span>
+            <p className="font-semibold text-indigo-700 dark:text-indigo-300 text-sm">AI-подсказки на сегодня</p>
+            {aiLoading && (
+              <div className="ml-auto flex gap-1">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce"
+                    style={{ animationDelay: `${i * 0.15}s` }} />
+                ))}
+              </div>
+            )}
+          </div>
+          {aiInsights.length > 0 ? (
+            <div className="space-y-2">
+              {aiInsights.map((hint, i) => (
+                <p key={i} className="text-sm text-indigo-800 dark:text-indigo-200 leading-relaxed">{hint}</p>
+              ))}
+            </div>
+          ) : !aiLoading && (
+            <p className="text-sm text-indigo-400 dark:text-indigo-600">
+              {leads.length === 0
+                ? "Добавьте первый лид — AI начнёт давать советы"
+                : "Укажите ANTHROPIC_API_KEY чтобы включить AI-подсказки"}
+            </p>
+          )}
+        </div>
+
+        {/* Hot leads */}
+        {hotLeads.length > 0 && (
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-700">
+              <p className="font-semibold text-slate-800 dark:text-slate-200 text-sm">🔥 Приоритетные лиды</p>
+              <button onClick={() => navigate("/board")}
+                className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
+                Все →
+              </button>
+            </div>
+            <div className="divide-y divide-slate-50 dark:divide-slate-700/50">
+              {hotLeads.map((lead) => (
+                <button key={lead.id} onClick={() => navigate(`/leads/${lead.id}`)}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                  <ScoreDot score={lead.score ?? 50} />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-slate-900 dark:text-slate-100 text-sm truncate">{lead.name}</p>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${STAGE_COLORS[lead.stage] || ""}`}>
+                        {STAGE_LABELS[lead.stage]}
+                      </span>
+                      {lead.next_action && (
+                        <span className="text-xs text-slate-400 dark:text-slate-500 truncate">⏰ {lead.next_action}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    {lead.budget && (
+                      <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                        {lead.budget >= 1e6 ? (lead.budget / 1e6).toFixed(1) + "M" : Math.round(lead.budget / 1000) + "K"}
+                      </p>
+                    )}
+                    <p className="text-[10px] text-slate-300 dark:text-slate-600 mt-0.5">
+                      {formatDistanceToNow(new Date(lead.created_at), { locale: ru })}
+                    </p>
+                  </div>
+                  <span className="text-slate-300 dark:text-slate-600 text-sm">›</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {leads.length === 0 && (
+          <div className="text-center py-12">
+            <p className="text-4xl mb-3">📋</p>
+            <p className="font-semibold text-slate-700 dark:text-slate-300">Лидов пока нет</p>
+            <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
+              Добавьте первый лид через воронку или настройте интеграцию с сайтом
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

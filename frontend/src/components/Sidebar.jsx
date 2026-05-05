@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import api from "../api/client.js";
+import { useTheme } from "../context/ThemeContext.jsx";
 
 const NAV = [
   { to: "/", label: "Главная", icon: "⊞", exact: true },
@@ -10,6 +11,7 @@ const NAV = [
 
 export default function Sidebar() {
   const navigate = useNavigate();
+  const { dark, toggle } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -22,23 +24,26 @@ export default function Sidebar() {
     navigate("/login");
   }
 
+  const linkClass = ({ isActive }) =>
+    `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+      isActive
+        ? "bg-indigo-600 text-white"
+        : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+    }`;
+
   return (
     <aside className={`flex flex-col bg-slate-900 text-slate-300 transition-all duration-200 ${collapsed ? "w-16" : "w-56"} shrink-0`}>
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-slate-800">
-        <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center text-white font-bold text-sm shrink-0">
-          C
-        </div>
+        <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center text-white font-bold text-sm shrink-0">C</div>
         {!collapsed && (
           <div>
             <p className="text-white font-semibold text-sm leading-none">CRM</p>
             <p className="text-slate-500 text-xs mt-0.5">Инвест Недвижимость</p>
           </div>
         )}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="ml-auto text-slate-600 hover:text-slate-300 transition text-xs"
-        >
+        <button onClick={() => setCollapsed(!collapsed)}
+          className="ml-auto text-slate-600 hover:text-slate-300 transition text-xs">
           {collapsed ? "▶" : "◀"}
         </button>
       </div>
@@ -46,34 +51,13 @@ export default function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 py-4 space-y-1 px-2">
         {NAV.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.exact}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                isActive
-                  ? "bg-indigo-600 text-white"
-                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-              }`
-            }
-          >
+          <NavLink key={item.to} to={item.to} end={item.exact} className={linkClass}>
             <span className="text-base w-5 text-center shrink-0">{item.icon}</span>
             {!collapsed && <span>{item.label}</span>}
           </NavLink>
         ))}
-
         {isAdmin && (
-          <NavLink
-            to="/users"
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                isActive
-                  ? "bg-indigo-600 text-white"
-                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-              }`
-            }
-          >
+          <NavLink to="/users" className={linkClass}>
             <span className="text-base w-5 text-center shrink-0">👤</span>
             {!collapsed && <span>Менеджеры</span>}
           </NavLink>
@@ -82,21 +66,23 @@ export default function Sidebar() {
 
       {/* Bottom */}
       <div className="p-2 border-t border-slate-800 space-y-1">
+        {/* Theme toggle */}
+        <button onClick={toggle}
+          className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm text-slate-500 hover:bg-slate-800 hover:text-slate-300 transition">
+          <span className="text-base w-5 text-center shrink-0">{dark ? "☀️" : "🌙"}</span>
+          {!collapsed && <span>{dark ? "Светлая тема" : "Тёмная тема"}</span>}
+        </button>
+
         {!collapsed && (
-          <a
-            href="/form"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-xs text-slate-500 hover:bg-slate-800 hover:text-slate-300 transition"
-          >
+          <a href="/form" target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-xs text-slate-500 hover:bg-slate-800 hover:text-slate-300 transition">
             <span className="text-base w-5 text-center shrink-0">🔗</span>
             <span>Форма заявки</span>
           </a>
         )}
-        <button
-          onClick={logout}
-          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-slate-500 hover:bg-slate-800 hover:text-slate-300 transition"
-        >
+
+        <button onClick={logout}
+          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-slate-500 hover:bg-slate-800 hover:text-slate-300 transition">
           <span className="text-base w-5 text-center shrink-0">⎋</span>
           {!collapsed && <span>Выйти</span>}
         </button>

@@ -13,6 +13,10 @@ class LeadCreate(BaseModel):
     stage: str = "new"
     budget: int | None = None
     notes: str | None = None
+    tags: list[str] | None = None
+    score: int = 50
+    next_action: str | None = None
+    next_date: datetime | None = None
     assigned_to_id: int | None = None
 
 
@@ -25,6 +29,10 @@ class LeadUpdate(BaseModel):
     stage: str | None = None
     budget: int | None = None
     notes: str | None = None
+    tags: list[str] | None = None
+    score: int | None = None
+    next_action: str | None = None
+    next_date: datetime | None = None
     assigned_to_id: int | None = None
 
 
@@ -38,6 +46,10 @@ class LeadOut(BaseModel):
     stage: str
     budget: int | None
     notes: str | None
+    tags: list[str] | None = None
+    score: int = 50
+    next_action: str | None = None
+    next_date: datetime | None = None
     assigned_to: UserOut | None
     created_at: datetime
     updated_at: datetime

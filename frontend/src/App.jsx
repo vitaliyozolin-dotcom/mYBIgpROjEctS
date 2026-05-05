@@ -17,7 +17,7 @@ function PrivateRoute({ children }) {
 
 function AppLayout({ children }) {
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden">
+    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden">
       {/* Sidebar — only on desktop */}
       <div className="hidden md:flex">
         <Sidebar />

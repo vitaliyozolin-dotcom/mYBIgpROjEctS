@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import init_db
 from app.models import user, lead, comment, task, stage_history  # noqa: must load before routers
-from app.routers import auth, leads, comments, tasks, webhooks
+from app.routers import auth, leads, comments, tasks, webhooks, ai
 from app.services.auth import hash_password
 from sqlalchemy import select
 
@@ -51,6 +51,7 @@ app.include_router(leads.router)
 app.include_router(comments.router)
 app.include_router(tasks.router)
 app.include_router(webhooks.router)
+app.include_router(ai.router)
 
 
 @app.get("/health")

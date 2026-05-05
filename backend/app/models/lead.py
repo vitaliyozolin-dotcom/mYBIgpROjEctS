@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, Text, ForeignKey, DateTime, func, Integer
+from sqlalchemy import String, Text, ForeignKey, DateTime, func, Integer, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -15,13 +15,14 @@ class Lead(Base):
     telegram_chat_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     source: Mapped[str] = mapped_column(String(50), default="manual")
-    # manual | website | avito | telegram | vk | whatsapp | instagram
-
     stage: Mapped[str] = mapped_column(String(50), default="new")
-    # new | contacted | qualified | proposal | negotiation | won | lost
-
-    budget: Mapped[int | None] = mapped_column(Integer, nullable=True)  # в рублях
+    budget: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    tags: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    score: Mapped[int] = mapped_column(Integer, default=50)
+    next_action: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    next_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     assigned_to_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     assigned_to: Mapped["User | None"] = relationship(back_populates="leads")  # noqa
