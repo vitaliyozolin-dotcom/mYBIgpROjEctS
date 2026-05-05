@@ -7,6 +7,10 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 10080  # 7 дней
 
     telegram_bot_token: str = ""
+
+    # AI provider. OpenAI is the primary provider; Anthropic stays as legacy fallback config.
+    openai_api_key: str = ""
+    openai_model: str = "gpt-5-mini"
     anthropic_api_key: str = ""
 
     ai_start_hour: int = 20
