@@ -17,6 +17,16 @@ class LeadCreate(BaseModel):
     score: int = 50
     next_action: str | None = None
     next_date: datetime | None = None
+    last_contact_at: datetime | None = None
+    property_type: str | None = None
+    location: str | None = None
+    rooms: str | None = None
+    desired_area: str | None = None
+    purchase_goal: str | None = None
+    payment_method: str | None = None
+    mortgage_status: str | None = None
+    purchase_timeline: str | None = None
+    main_objection: str | None = None
     assigned_to_id: int | None = None
 
 
@@ -33,6 +43,16 @@ class LeadUpdate(BaseModel):
     score: int | None = None
     next_action: str | None = None
     next_date: datetime | None = None
+    last_contact_at: datetime | None = None
+    property_type: str | None = None
+    location: str | None = None
+    rooms: str | None = None
+    desired_area: str | None = None
+    purchase_goal: str | None = None
+    payment_method: str | None = None
+    mortgage_status: str | None = None
+    purchase_timeline: str | None = None
+    main_objection: str | None = None
     assigned_to_id: int | None = None
 
 
@@ -50,6 +70,16 @@ class LeadOut(BaseModel):
     score: int = 50
     next_action: str | None = None
     next_date: datetime | None = None
+    last_contact_at: datetime | None = None
+    property_type: str | None = None
+    location: str | None = None
+    rooms: str | None = None
+    desired_area: str | None = None
+    purchase_goal: str | None = None
+    payment_method: str | None = None
+    mortgage_status: str | None = None
+    purchase_timeline: str | None = None
+    main_objection: str | None = None
     assigned_to: UserOut | None
     created_at: datetime
     updated_at: datetime
