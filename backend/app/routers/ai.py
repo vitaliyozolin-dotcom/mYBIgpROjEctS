@@ -1,5 +1,7 @@
-"""AI-прокси: проксирует запросы к Anthropic Claude через бэкенд.
-API-ключ хранится только на сервере и никогда не передаётся клиенту.
+"""AI-прокси для CRM.
+
+Ключ OpenAI хранится только на backend и никогда не попадает во frontend.
+Frontend ходит в POST /api/ai/chat, backend вызывает OpenAI Responses API.
 """
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,10 +12,26 @@ from app.config import settings
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
-CRM_SYSTEM_PROMPT = """Ты — умный AI-ассистент CRM-системы для продажи недвижимости «Инвест Недвижимость».
-Помогаешь менеджерам анализировать лиды, давать рекомендации по работе с клиентами.
-Компания продаёт готовый арендный бизнес (ГАБ) от 2 млн ₽, окупаемость 6–7 лет.
-Отвечай кратко и конкретно на русском языке. Используй эмодзи для наглядности."""
+CRM_SYSTEM_PROMPT = """Ты — AI-директор по продажам внутри CRM для недвижимости «Инвест Недвижимость».
+Твоя задача — помогать менеджеру довести лида до сделки, а не просто отвечать общими словами.
+
+Формат ответов:
+- кратко;
+- конкретно;
+- по-русски;
+- с приоритетами;
+- без воды;
+- если просишь действие — формулируй его так, чтобы менеджер мог сразу выполнить.
+
+Ты умеешь:
+1. Давать краткое резюме лида.
+2. Оценивать риск потери клиента.
+3. Предлагать следующий лучший шаг.
+4. Писать скрипт звонка.
+5. Писать сообщение в WhatsApp/Telegram.
+6. Объяснять, почему лид горячий или слабый.
+7. Подсказывать, что спросить у клиента дальше.
+"""
 
 
 class ChatMessage(BaseModel):
@@ -27,36 +45,58 @@ class ChatRequest(BaseModel):
     context: str | None = None
 
 
+def _messages_to_input(messages: list[ChatMessage]) -> str:
+    parts: list[str] = []
+    for message in messages:
+        role = "Менеджер" if message.role == "user" else "AI"
+        parts.append(f"{role}: {message.content}")
+    return "\n".join(parts)
+
+
 @router.post("/chat")
 async def ai_chat(req: ChatRequest, _: User = Depends(get_current_user)):
-    if not settings.anthropic_api_key:
-        raise HTTPException(status_code=503, detail="AI не настроен: укажите ANTHROPIC_API_KEY в .env")
+    if not settings.openai_api_key:
+        raise HTTPException(status_code=503, detail="AI не настроен: укажите OPENAI_API_KEY в .env")
 
     system = req.system or CRM_SYSTEM_PROMPT
     if req.context:
-        system += f"\n\nКонтекст текущей сессии:\n{req.context}"
+        system += f"\n\nКонтекст CRM:\n{req.context}"
+
+    user_input = _messages_to_input(req.messages)
 
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                "https://api.anthropic.com/v1/messages",
+                "https://api.openai.com/v1/responses",
                 headers={
-                    "x-api-key": settings.anthropic_api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
+                    "Authorization": f"Bearer {settings.openai_api_key}",
+                    "Content-Type": "application/json",
                 },
                 json={
-                    "model": "claude-haiku-4-5-20251001",
-                    "max_tokens": 1000,
-                    "system": system,
-                    "messages": [m.model_dump() for m in req.messages],
+                    "model": settings.openai_model,
+                    "instructions": system,
+                    "input": user_input,
+                    "max_output_tokens": 900,
                 },
-                timeout=30,
+                timeout=45,
             )
             response.raise_for_status()
             data = response.json()
-            text = data.get("content", [{}])[0].get("text", "Нет ответа")
-            return {"content": text}
+            text = data.get("output_text")
+
+            if not text:
+                output = data.get("output") or []
+                chunks: list[str] = []
+                for item in output:
+                    for content in item.get("content", []) or []:
+                        if content.get("type") in {"output_text", "text"} and content.get("text"):
+                            chunks.append(content["text"])
+                text = "\n".join(chunks).strip()
+
+            return {"content": text or "AI не вернул текстовый ответ"}
+    except httpx.HTTPStatusError as e:
+        detail = e.response.text[:500] if e.response is not None else str(e)
+        raise HTTPException(status_code=502, detail=f"Ошибка OpenAI: {detail}")
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="AI не ответил вовремя")
     except Exception as e:
