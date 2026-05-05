@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.lead import Lead
+from app.models.stage_history import LeadStageHistory
 from app.schemas.lead import WebhookLead
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
@@ -47,6 +48,8 @@ async def receive_lead(
         stage="new",
     )
     db.add(lead)
+    await db.flush()
+    db.add(LeadStageHistory(lead_id=lead.id, stage="new"))
     await db.commit()
     await db.refresh(lead)
 

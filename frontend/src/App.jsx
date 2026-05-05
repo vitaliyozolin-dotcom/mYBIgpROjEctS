@@ -6,6 +6,8 @@ import Board from "./pages/Board.jsx";
 import LeadDetail from "./pages/LeadDetail.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import Analytics from "./pages/Analytics.jsx";
+import Users from "./pages/Users.jsx";
+import PublicForm from "./pages/PublicForm.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import BottomNav from "./components/BottomNav.jsx";
 
@@ -38,10 +40,12 @@ export default function App() {
     <>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/form" element={<PublicForm />} />
         <Route path="/" element={<PrivateRoute><AppLayout><Dashboard /></AppLayout></PrivateRoute>} />
         <Route path="/board" element={<PrivateRoute><AppLayout><Board /></AppLayout></PrivateRoute>} />
         <Route path="/leads/:id" element={<PrivateRoute><AppLayout><LeadDetail /></AppLayout></PrivateRoute>} />
         <Route path="/analytics" element={<PrivateRoute><AppLayout><Analytics /></AppLayout></PrivateRoute>} />
+        <Route path="/users" element={<PrivateRoute><AppLayout><Users /></AppLayout></PrivateRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <Toaster position="top-right" toastOptions={{ style: { borderRadius: "10px", fontSize: "14px" } }} />

@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models.user import User
-from app.schemas.user import UserCreate, UserOut, Token, LoginForm
+from app.schemas.user import UserCreate, UserUpdate, UserOut, Token, LoginForm
 from app.services.auth import hash_password, verify_password, create_token, get_current_user, require_admin
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -45,3 +45,27 @@ async def me(current_user: User = Depends(get_current_user)):
 async def list_users(db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
     result = await db.execute(select(User).order_by(User.name))
     return result.scalars().all()
+
+
+@router.patch("/users/{user_id}", response_model=UserOut)
+async def update_user(
+    user_id: int,
+    data: UserUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    updates = data.model_dump(exclude_unset=True)
+    if "password" in updates:
+        updates["hashed_password"] = hash_password(updates.pop("password"))
+
+    for field, value in updates.items():
+        setattr(user, field, value)
+
+    await db.commit()
+    await db.refresh(user)
+    return user

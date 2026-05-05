@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
+import api from "../api/client.js";
 
 const NAV = [
   { to: "/", label: "Главная", icon: "⊞", exact: true },
@@ -10,6 +11,11 @@ const NAV = [
 export default function Sidebar() {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    api.get("/auth/me").then(({ data }) => setIsAdmin(data.role === "admin")).catch(() => {});
+  }, []);
 
   function logout() {
     localStorage.removeItem("token");
@@ -56,10 +62,37 @@ export default function Sidebar() {
             {!collapsed && <span>{item.label}</span>}
           </NavLink>
         ))}
+
+        {isAdmin && (
+          <NavLink
+            to="/users"
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                isActive
+                  ? "bg-indigo-600 text-white"
+                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+              }`
+            }
+          >
+            <span className="text-base w-5 text-center shrink-0">👤</span>
+            {!collapsed && <span>Менеджеры</span>}
+          </NavLink>
+        )}
       </nav>
 
       {/* Bottom */}
-      <div className="p-2 border-t border-slate-800">
+      <div className="p-2 border-t border-slate-800 space-y-1">
+        {!collapsed && (
+          <a
+            href="/form"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-xs text-slate-500 hover:bg-slate-800 hover:text-slate-300 transition"
+          >
+            <span className="text-base w-5 text-center shrink-0">🔗</span>
+            <span>Форма заявки</span>
+          </a>
+        )}
         <button
           onClick={logout}
           className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-slate-500 hover:bg-slate-800 hover:text-slate-300 transition"
