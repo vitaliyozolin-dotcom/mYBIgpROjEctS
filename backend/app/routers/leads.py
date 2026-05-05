@@ -9,16 +9,83 @@ from app.models.user import User
 from app.models.stage_history import LeadStageHistory
 from app.schemas.lead import LeadCreate, LeadUpdate, LeadOut
 from app.services.auth import get_current_user
-from app.config import settings
 
 router = APIRouter(prefix="/api/leads", tags=["leads"])
 
 LOAD_OPTS = [selectinload(Lead.assigned_to), selectinload(Lead.comments), selectinload(Lead.tasks)]
 
 STAGE_LABELS = {
-    "new": "Новый", "contacted": "Связались", "qualified": "Квалифицирован",
-    "proposal": "Предложение", "negotiation": "Переговоры", "won": "Сделка ✅", "lost": "Отказ ❌",
+    "new": "Новая заявка",
+    "no_answer": "Не дозвонились",
+    "contacted": "Первичный контакт",
+    "qualified": "Квалификация",
+    "selection": "Подбор объекта",
+    "showing_scheduled": "Показ назначен",
+    "showing_done": "Показ проведён",
+    "booking": "Бронь / Аванс",
+    "documents": "Документы / Ипотека",
+    "won": "Сделка ✅",
+    "lost": "Отказ / Архив ❌",
 }
+
+SCORE_RECALC_FIELDS = {"budget", "tags", "stage", "next_action", "next_date", "source"}
+
+
+def calculate_lead_score(lead: Lead) -> int:
+    """Расчётный score лида: деньги + намерение + стадия + дисциплина следующего шага."""
+    score = 0
+    budget = lead.budget or 0
+    tags = lead.tags or []
+
+    if budget >= 10_000_000:
+        score += 25
+    elif budget >= 5_000_000:
+        score += 20
+    elif budget >= 3_000_000:
+        score += 12
+    elif budget > 0:
+        score += 5
+
+    tag_points = {
+        "Горячий": 20,
+        "VIP": 15,
+        "Ипотека": 15,
+        "Инвестор": 10,
+        "Срочно": 10,
+        "Повторный": 8,
+        "Корпоратив": 8,
+        "Семья": 5,
+    }
+    score += sum(tag_points.get(tag, 0) for tag in tags)
+
+    stage_points = {
+        "new": 5,
+        "no_answer": 0,
+        "contacted": 8,
+        "qualified": 12,
+        "selection": 16,
+        "showing_scheduled": 22,
+        "showing_done": 24,
+        "booking": 30,
+        "documents": 32,
+        "won": 100,
+        "lost": 0,
+    }
+    if lead.stage == "won":
+        return 100
+    if lead.stage == "lost":
+        return 0
+    score += stage_points.get(lead.stage, 5)
+
+    if lead.next_action:
+        score += 5
+    if lead.next_date:
+        score += 5
+
+    if lead.source in {"partners", "referral"}:
+        score += 5
+
+    return max(0, min(100, int(score)))
 
 
 async def notify_stage_change(lead_name: str, lead_id: int, old_stage: str, new_stage: str):
@@ -64,6 +131,7 @@ async def create_lead(
     if not lead_data.get("assigned_to_id") and current_user.role == "manager":
         lead_data["assigned_to_id"] = current_user.id
     lead = Lead(**lead_data)
+    lead.score = calculate_lead_score(lead)
     db.add(lead)
     await db.flush()
     db.add(LeadStageHistory(lead_id=lead.id, stage=lead.stage))
@@ -100,6 +168,9 @@ async def update_lead(
 
     for field, value in updates.items():
         setattr(lead, field, value)
+
+    if SCORE_RECALC_FIELDS.intersection(updates.keys()):
+        lead.score = calculate_lead_score(lead)
 
     if "stage" in updates and updates["stage"] != old_stage:
         db.add(LeadStageHistory(lead_id=lead.id, stage=updates["stage"]))
