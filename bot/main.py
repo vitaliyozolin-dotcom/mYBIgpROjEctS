@@ -1,66 +1,85 @@
 """
-Telegram бот CRM.
-Две роли:
-1. Менеджерский бот — уведомления о новых лидах, задачах (личный чат с ботом)
-2. Клиентский чат — ИИ-ответы в нерабочее время в групповых чатах или личке с клиентом
-
-Внутренний HTTP-сервер на :8001 принимает события от backend (новые лиды).
+Telegram CRM-бот.
+- Личный чат с менеджером: /start регистрирует, бот шлёт уведомления о новых лидах и смене стадий
+- Клиентские чаты: ИИ-ответы в нерабочее время (20:00–09:00)
+- Внутренний HTTP-сервер :8001 принимает события от backend
 """
 import asyncio
+import json
 import logging
-from contextlib import asynccontextmanager
+import os
+from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F
+from aiogram.filters import CommandStart
 from aiogram.types import Message
 from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
 
 from config import settings
-from handlers.manager import router as manager_router
 from handlers.ai_chat import get_ai_response, is_ai_time
 
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=settings.telegram_bot_token)
 dp = Dispatcher()
-dp.include_router(manager_router)
 
-# Хранилище истории чатов для контекста ИИ (в памяти, для MVP достаточно)
+# Хранилище ID чатов менеджеров — сохраняется в файл между перезапусками
+MANAGERS_FILE = Path("/app/managers.json")
 chat_histories: dict[int, list[dict]] = {}
 
-# ID чатов менеджеров — они получают уведомления о новых лидах
-# Менеджер добавляется командой /start, потом admin вносит его telegram_id в CRM
-manager_chat_ids: set[int] = set()
+
+def load_managers() -> set[int]:
+    try:
+        return set(json.loads(MANAGERS_FILE.read_text()))
+    except Exception:
+        return set()
+
+
+def save_managers(ids: set[int]):
+    try:
+        MANAGERS_FILE.write_text(json.dumps(list(ids)))
+    except Exception:
+        pass
+
+
+manager_chat_ids: set[int] = load_managers()
+
+
+@dp.message(CommandStart())
+async def cmd_start(message: Message):
+    manager_chat_ids.add(message.chat.id)
+    save_managers(manager_chat_ids)
+    await message.answer(
+        "👋 Привет! Ты подключён к CRM.\n\n"
+        "Буду присылать уведомления о:\n"
+        "• Новых лидах\n"
+        "• Смене стадии в воронке\n\n"
+        f"Зарегистрировано менеджеров: {len(manager_chat_ids)}"
+    )
 
 
 @dp.message(F.text & ~F.text.startswith("/"))
-async def handle_message(message: Message):
-    """
-    Обрабатывает текстовые сообщения от пользователей.
-    Если сообщение в нерабочее время — ИИ отвечает.
-    """
-    chat_id = message.chat.id
-
+async def handle_client_message(message: Message):
+    """ИИ отвечает клиентам в нерабочее время."""
     if not is_ai_time():
         return
-
+    chat_id = message.chat.id
     history = chat_histories.setdefault(chat_id, [])
-
     await bot.send_chat_action(chat_id, "typing")
+    try:
+        response = await get_ai_response(message.text, history)
+        history.append({"role": "user", "content": message.text})
+        history.append({"role": "assistant", "content": response})
+        if len(history) > 20:
+            chat_histories[chat_id] = history[-20:]
+        await message.answer(response)
+    except Exception as e:
+        logging.error(f"AI error: {e}")
 
-    response = await get_ai_response(message.text, history)
 
-    history.append({"role": "user", "content": message.text})
-    history.append({"role": "assistant", "content": response})
-
-    if len(history) > 20:
-        chat_histories[chat_id] = history[-20:]
-
-    await message.answer(response)
-
-
-# Внутренний HTTP сервер для приёма событий от backend
+# ─── Internal HTTP server ───────────────────────────────────────────────────
 
 app = FastAPI()
 
@@ -72,32 +91,47 @@ class NewLeadEvent(BaseModel):
     source: str = "unknown"
 
 
+class StageChangeEvent(BaseModel):
+    lead_id: int
+    lead_name: str
+    old_stage: str
+    new_stage: str
+
+
+async def broadcast(text: str):
+    for chat_id in list(manager_chat_ids):
+        try:
+            await bot.send_message(chat_id, text, parse_mode="HTML")
+        except Exception as e:
+            logging.warning(f"Failed to send to {chat_id}: {e}")
+
+
 @app.post("/internal/new-lead")
 async def new_lead_event(event: NewLeadEvent):
-    if not manager_chat_ids:
-        return {"status": "no managers registered"}
-
     text = (
-        f"🔔 Новый лид!\n\n"
+        f"🔔 <b>Новый лид!</b>\n\n"
         f"👤 {event.name}\n"
         f"📞 {event.phone or '—'}\n"
         f"📡 Источник: {event.source}\n\n"
-        f"Открыть в CRM: http://localhost:3000/leads/{event.lead_id}"
+        f"Открыть: http://136.244.96.159:3000/leads/{event.lead_id}"
     )
+    await broadcast(text)
+    return {"status": "sent", "managers": len(manager_chat_ids)}
 
-    for chat_id in manager_chat_ids:
-        try:
-            await bot.send_message(chat_id, text)
-        except Exception:
-            pass
 
+@app.post("/internal/stage-change")
+async def stage_change_event(event: StageChangeEvent):
+    text = (
+        f"🔄 <b>Смена стадии</b>\n\n"
+        f"👤 {event.lead_name}\n"
+        f"<i>{event.old_stage}</i> → <b>{event.new_stage}</b>\n\n"
+        f"Открыть: http://136.244.96.159:3000/leads/{event.lead_id}"
+    )
+    await broadcast(text)
     return {"status": "sent"}
 
 
-@dp.message(F.text == "/start")
-async def register_manager(message: Message):
-    manager_chat_ids.add(message.chat.id)
-
+# ─── Run ────────────────────────────────────────────────────────────────────
 
 async def run_bot():
     await dp.start_polling(bot)

@@ -34,7 +34,12 @@ async def create_task(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    task = Task(**data.model_dump(), assigned_to_id=data.assigned_to_id or current_user.id)
+    task = Task(
+        title=data.title,
+        lead_id=data.lead_id,
+        due_at=data.due_at,
+        assigned_to_id=data.assigned_to_id or current_user.id,
+    )
     db.add(task)
     await db.commit()
     await db.refresh(task)

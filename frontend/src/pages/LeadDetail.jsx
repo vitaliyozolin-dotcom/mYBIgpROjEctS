@@ -31,14 +31,18 @@ export default function LeadDetail() {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
 
+  const [stageHistory, setStageHistory] = useState([]);
+
   const fetchAll = useCallback(async () => {
-    const [l, c, t] = await Promise.all([
+    const [l, c, t, h] = await Promise.all([
       api.get(`/leads/${id}`),
       api.get(`/comments/lead/${id}`),
       api.get(`/tasks/lead/${id}`),
+      api.get(`/leads/${id}/stage-history`),
     ]);
     setLead(l.data); setForm(l.data);
     setComments(c.data); setTasks(t.data);
+    setStageHistory(h.data);
   }, [id]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
@@ -54,17 +58,28 @@ export default function LeadDetail() {
   async function addComment(e) {
     e.preventDefault();
     if (!newComment.trim()) return;
-    await api.post("/comments", { text: newComment, lead_id: parseInt(id) });
-    setNewComment("");
-    api.get(`/comments/lead/${id}`).then((r) => setComments(r.data));
+    try {
+      await api.post("/comments", { text: newComment, lead_id: parseInt(id) });
+      setNewComment("");
+      const { data } = await api.get(`/comments/lead/${id}`);
+      setComments(data);
+    } catch {
+      toast.error("Не удалось добавить комментарий");
+    }
   }
 
   async function addTask(e) {
     e.preventDefault();
     if (!newTask.title.trim()) return;
-    await api.post("/tasks", { ...newTask, lead_id: parseInt(id), due_at: newTask.due_at || null });
-    setNewTask({ title: "", due_at: "" });
-    api.get(`/tasks/lead/${id}`).then((r) => setTasks(r.data));
+    try {
+      await api.post("/tasks", { title: newTask.title, lead_id: parseInt(id), due_at: newTask.due_at || null });
+      setNewTask({ title: "", due_at: "" });
+      const { data } = await api.get(`/tasks/lead/${id}`);
+      setTasks(data);
+      toast.success("Задача добавлена");
+    } catch {
+      toast.error("Не удалось добавить задачу");
+    }
   }
 
   async function toggleTask(task) {
@@ -183,6 +198,25 @@ export default function LeadDetail() {
 
         {/* Right: tasks + comments */}
         <div className="md:col-span-2 space-y-5">
+          {/* Stage history */}
+          {stageHistory.length > 0 && (
+            <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+              <h3 className="font-semibold text-slate-800 mb-4 text-sm">⏱ Время в стадиях</h3>
+              <div className="space-y-2">
+                {stageHistory.map((h, i) => (
+                  <div key={i} className={`flex items-center gap-3 p-2.5 rounded-xl ${h.is_current ? "bg-indigo-50 border border-indigo-100" : "bg-slate-50"}`}>
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${h.is_current ? "bg-indigo-500" : "bg-slate-300"}`} />
+                    <span className="text-sm flex-1 text-slate-700">{h.label}</span>
+                    <span className={`text-xs font-medium ${h.is_current ? "text-indigo-600" : "text-slate-400"}`}>
+                      {h.days > 0 ? `${h.days}д ` : ""}{h.hours}ч
+                      {h.is_current && " (сейчас)"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Tasks */}
           <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
             <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
