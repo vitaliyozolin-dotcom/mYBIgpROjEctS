@@ -3,29 +3,26 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.transaction import TransactionKind
+from app.models.transaction import TransactionDirection
 
 
 class TransactionBase(BaseModel):
     account_id: int
-    kind: TransactionKind = TransactionKind.DEBIT
+    external_id: str = Field(..., min_length=1, max_length=128)
     amount: Decimal = Field(..., gt=0)
-    currency: str = Field(default="RUB", min_length=3, max_length=3)
+    direction: TransactionDirection
     counterparty: str | None = Field(None, max_length=255)
-    counterparty_inn: str | None = Field(None, max_length=16)
-    description: str | None = None
-    occurred_at: datetime
+    purpose: str | None = None
+    dds_category: str | None = Field(None, max_length=128)
+    transaction_date: datetime
 
 
 class TransactionCreate(TransactionBase):
-    external_id: str | None = Field(None, max_length=128)
-    balance_after: Decimal | None = None
+    pass
 
 
 class TransactionRead(TransactionBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    external_id: str | None
-    balance_after: Decimal | None
-    created_at: datetime
+    imported_at: datetime

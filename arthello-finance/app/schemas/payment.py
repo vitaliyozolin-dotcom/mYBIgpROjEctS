@@ -3,41 +3,40 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.payment import PaymentDirection, PaymentStatus
+from app.models.payment import PaymentStatus
 
 
-class PaymentBase(BaseModel):
+class PaymentQueueBase(BaseModel):
+    company_id: int
     counterparty: str = Field(..., min_length=1, max_length=255)
-    legal_entity: str = Field(..., min_length=1, max_length=255)
-    purpose: str = Field(..., min_length=1)
-    category: str | None = Field(None, max_length=128)
-    direction: PaymentDirection = PaymentDirection.OUTGOING
+    description: str = Field(..., min_length=1)
     amount: Decimal = Field(..., gt=0)
-    currency: str = Field(default="RUB", min_length=3, max_length=3)
     due_date: date | None = None
-    invoice_number: str | None = Field(None, max_length=64)
+    priority: int = Field(default=3, ge=1, le=4)
     notes: str | None = None
 
 
-class PaymentCreate(PaymentBase):
-    account_id: int | None = None
+class PaymentQueueCreate(PaymentQueueBase):
     status: PaymentStatus = PaymentStatus.PENDING
 
 
-class PaymentUpdate(BaseModel):
+class PaymentQueueUpdate(BaseModel):
     status: PaymentStatus | None = None
-    paid_date: date | None = None
+    priority: int | None = Field(None, ge=1, le=4)
     amount: Decimal | None = Field(None, gt=0)
+    due_date: date | None = None
+    approved_by: str | None = None
+    approved_at: datetime | None = None
+    paid_at: datetime | None = None
     notes: str | None = None
-    account_id: int | None = None
 
 
-class PaymentRead(PaymentBase):
+class PaymentQueueRead(PaymentQueueBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    account_id: int | None
     status: PaymentStatus
-    paid_date: date | None
+    approved_by: str | None
+    approved_at: datetime | None
+    paid_at: datetime | None
     created_at: datetime
-    updated_at: datetime

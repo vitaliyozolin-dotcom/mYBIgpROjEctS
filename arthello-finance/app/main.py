@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import accounts, dashboard, payments
+from app.routers import accounts, companies, dashboard, dds_categories, payments
 from app.services.scheduler import shutdown_scheduler, start_scheduler
 
 logging.basicConfig(
@@ -41,8 +41,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(companies.router)
 app.include_router(accounts.router)
 app.include_router(payments.router)
+app.include_router(dds_categories.router)
 app.include_router(dashboard.router)
 
 

@@ -1,28 +1,25 @@
 from datetime import datetime
-from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.account import AccountType
+from app.models.account import AccountType, Bank
 
 
 class AccountBase(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    legal_entity: str = Field(..., min_length=1, max_length=255)
-    bank_name: str | None = Field(None, max_length=255)
+    company_id: int
+    bank: Bank
+    account_type: AccountType = AccountType.MAIN
     account_number: str | None = Field(None, max_length=64)
-    currency: str = Field(default="RUB", min_length=3, max_length=3)
-    type: AccountType = AccountType.BANK
+    name: str = Field(..., min_length=1, max_length=255)
 
 
 class AccountCreate(AccountBase):
-    balance: Decimal = Field(default=Decimal("0.00"), ge=0)
+    is_active: bool = True
 
 
 class AccountUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=255)
-    bank_name: str | None = Field(None, max_length=255)
-    balance: Decimal | None = None
+    account_number: str | None = Field(None, max_length=64)
     is_active: bool | None = None
 
 
@@ -30,7 +27,5 @@ class AccountRead(AccountBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    balance: Decimal
     is_active: bool
     created_at: datetime
-    updated_at: datetime

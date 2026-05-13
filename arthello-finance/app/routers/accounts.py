@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.account import Account
+from app.models.account import Account, Bank
 from app.schemas.account import AccountCreate, AccountRead, AccountUpdate
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
@@ -11,16 +11,19 @@ router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
 @router.get("", response_model=list[AccountRead])
 async def list_accounts(
-    legal_entity: str | None = None,
+    company_id: int | None = None,
+    bank: Bank | None = None,
     is_active: bool | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     stmt = select(Account)
-    if legal_entity is not None:
-        stmt = stmt.where(Account.legal_entity == legal_entity)
+    if company_id is not None:
+        stmt = stmt.where(Account.company_id == company_id)
+    if bank is not None:
+        stmt = stmt.where(Account.bank == bank)
     if is_active is not None:
         stmt = stmt.where(Account.is_active == is_active)
-    stmt = stmt.order_by(Account.legal_entity, Account.name)
+    stmt = stmt.order_by(Account.company_id, Account.name)
     result = await db.execute(stmt)
     return result.scalars().all()
 

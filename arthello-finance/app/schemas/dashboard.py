@@ -3,8 +3,9 @@ from decimal import Decimal
 from pydantic import BaseModel
 
 
-class LegalEntitySummary(BaseModel):
-    legal_entity: str
+class CompanySummary(BaseModel):
+    company_id: int
+    company_name: str
     accounts_count: int
     total_balance: Decimal
     pending_payments: Decimal
@@ -16,5 +17,4 @@ class DashboardSummary(BaseModel):
     accounts_count: int
     total_pending: Decimal
     total_overdue: Decimal
-    total_paid_this_month: Decimal
-    by_legal_entity: list[LegalEntitySummary]
+    by_company: list[CompanySummary]

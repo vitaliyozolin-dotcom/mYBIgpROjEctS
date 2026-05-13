@@ -48,7 +48,6 @@
         tbody tr:last-child { border-bottom: none; }
         td.num { text-align: right; font-variant-numeric: tabular-nums; }
         h2 { margin: 24px 0 12px; font-size: 18px; font-weight: 600; }
-        .footer { text-align: center; margin-top: 32px; color: #9ca3af; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -67,16 +66,12 @@
                 <div class="value">{{ summary.accounts_count }}</div>
             </div>
             <div class="card amber">
-                <div class="label">К оплате (PENDING)</div>
+                <div class="label">К оплате</div>
                 <div class="value">{{ "{:,.2f}".format(summary.total_pending).replace(",", " ") }} ₽</div>
             </div>
             <div class="card red">
                 <div class="label">Просрочено</div>
                 <div class="value">{{ "{:,.2f}".format(summary.total_overdue).replace(",", " ") }} ₽</div>
-            </div>
-            <div class="card">
-                <div class="label">Оплачено в этом месяце</div>
-                <div class="value">{{ "{:,.2f}".format(summary.total_paid_this_month).replace(",", " ") }} ₽</div>
             </div>
         </div>
 
@@ -84,7 +79,7 @@
         <table>
             <thead>
                 <tr>
-                    <th>Юр. лицо</th>
+                    <th>Компания</th>
                     <th>Счетов</th>
                     <th class="num">Остаток</th>
                     <th class="num">К оплате</th>
@@ -92,9 +87,9 @@
                 </tr>
             </thead>
             <tbody>
-                {% for row in summary.by_legal_entity %}
+                {% for row in summary.by_company %}
                 <tr>
-                    <td>{{ row.legal_entity }}</td>
+                    <td>{{ row.company_name }}</td>
                     <td>{{ row.accounts_count }}</td>
                     <td class="num">{{ "{:,.2f}".format(row.total_balance).replace(",", " ") }} ₽</td>
                     <td class="num">{{ "{:,.2f}".format(row.pending_payments).replace(",", " ") }} ₽</td>
@@ -105,10 +100,6 @@
                 {% endfor %}
             </tbody>
         </table>
-
-        <div class="footer">
-            ARTHELLO Finance · всего счетов в системе: {{ accounts_total }}
-        </div>
     </div>
 </body>
 </html>
