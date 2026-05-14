@@ -7,7 +7,7 @@ from app.models.account import AccountType, Bank
 
 class AccountBase(BaseModel):
     company_id: int
-    bank: Bank
+    bank: Bank | None = None
     account_type: AccountType = AccountType.MAIN
     account_number: str | None = Field(None, max_length=64)
     name: str = Field(..., min_length=1, max_length=255)

@@ -29,8 +29,8 @@ class Account(Base):
     company_id: Mapped[int] = mapped_column(
         ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    bank: Mapped[Bank] = mapped_column(
-        Enum(Bank, name="bank_enum"), nullable=False, index=True
+    bank: Mapped[Bank | None] = mapped_column(
+        Enum(Bank, name="bank_enum"), nullable=True, index=True
     )
     account_type: Mapped[AccountType] = mapped_column(
         Enum(AccountType, name="account_type_enum"),

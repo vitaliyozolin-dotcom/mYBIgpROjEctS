@@ -7,6 +7,8 @@ from app.models.company import CompanyType
 
 class CompanyBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
+    slug: str | None = Field(None, max_length=64)
+    description: str | None = None
     type: CompanyType = CompanyType.OOO
 
 
