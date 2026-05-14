@@ -1,7 +1,7 @@
 """company slug/description, account bank nullable
 
 Revision ID: 54311550a030
-Revises: 113bb665afb9
+Revises: 1b0e6089052d
 Create Date: 2026-05-14 11:22:19.338231
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision: str = '54311550a030'
-down_revision: Union[str, None] = '113bb665afb9'
+down_revision: Union[str, None] = '1b0e6089052d'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
