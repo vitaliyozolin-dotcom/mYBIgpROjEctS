@@ -23,6 +23,18 @@ class Lead(Base):
     score: Mapped[int] = mapped_column(Integer, default=50)
     next_action: Mapped[str | None] = mapped_column(String(500), nullable=True)
     next_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_contact_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Недвижимостный профиль лида
+    property_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    rooms: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    desired_area: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    purchase_goal: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    payment_method: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    mortgage_status: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    purchase_timeline: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    main_objection: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     assigned_to_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     assigned_to: Mapped["User | None"] = relationship(back_populates="leads")  # noqa
