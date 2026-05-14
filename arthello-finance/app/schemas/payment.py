@@ -13,6 +13,7 @@ class PaymentQueueBase(BaseModel):
     amount: Decimal = Field(..., gt=0)
     due_date: date | None = None
     priority: int = Field(default=3, ge=1, le=4)
+    dds_code: str | None = Field(None, max_length=64)
     notes: str | None = None
 
 
@@ -28,6 +29,7 @@ class PaymentQueueUpdate(BaseModel):
     approved_by: str | None = None
     approved_at: datetime | None = None
     paid_at: datetime | None = None
+    dds_code: str | None = None
     notes: str | None = None
 
 
@@ -40,3 +42,12 @@ class PaymentQueueRead(PaymentQueueBase):
     approved_at: datetime | None
     paid_at: datetime | None
     created_at: datetime
+
+
+class PaymentApproveBody(BaseModel):
+    approved_by: str = Field(..., min_length=1, max_length=255)
+
+
+class PaymentDeferBody(BaseModel):
+    days: int = Field(..., ge=1, le=365)
+    note: str | None = Field(None, max_length=1000)

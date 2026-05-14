@@ -1,9 +1,17 @@
 from app.schemas.account import AccountCreate, AccountRead, AccountUpdate
 from app.schemas.balance import BalanceCreate, BalanceRead
 from app.schemas.company import CompanyCreate, CompanyRead
-from app.schemas.dashboard import CompanySummary, DashboardSummary
+from app.schemas.dashboard import (
+    AccountBalanceItem,
+    CompanyBalanceBlock,
+    DashboardSummary,
+    TotalsByPriority,
+    UrgentPayment,
+)
 from app.schemas.dds_category import DDSCategoryCreate, DDSCategoryRead
 from app.schemas.payment import (
+    PaymentApproveBody,
+    PaymentDeferBody,
     PaymentQueueCreate,
     PaymentQueueRead,
     PaymentQueueUpdate,
@@ -18,10 +26,15 @@ __all__ = [
     "BalanceRead",
     "CompanyCreate",
     "CompanyRead",
-    "CompanySummary",
+    "AccountBalanceItem",
+    "CompanyBalanceBlock",
     "DashboardSummary",
+    "TotalsByPriority",
+    "UrgentPayment",
     "DDSCategoryCreate",
     "DDSCategoryRead",
+    "PaymentApproveBody",
+    "PaymentDeferBody",
     "PaymentQueueCreate",
     "PaymentQueueRead",
     "PaymentQueueUpdate",

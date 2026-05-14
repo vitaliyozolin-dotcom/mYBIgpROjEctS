@@ -361,7 +361,7 @@ async def _seed_payments(
                 due_date=today + timedelta(days=p["due_days"]),
                 priority=p["priority"],
                 status=PaymentStatus.PENDING,
-                notes=f"dds={p['dds_code']}",
+                dds_code=p["dds_code"],
             )
         )
         added += 1

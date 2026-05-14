@@ -1,20 +1,52 @@
+from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel
 
+Color = Literal["green", "yellow", "red"]
 
-class CompanySummary(BaseModel):
-    company_id: int
+
+class AccountBalanceItem(BaseModel):
+    name: str
+    amount: Decimal
+    color: Color
+
+
+class CompanyBalanceBlock(BaseModel):
+    company_slug: str | None
     company_name: str
-    accounts_count: int
-    total_balance: Decimal
-    pending_payments: Decimal
-    overdue_payments: Decimal
+    amount: Decimal
+    accounts: list[AccountBalanceItem]
+
+
+class UrgentPayment(BaseModel):
+    id: int
+    counterparty: str
+    description: str
+    amount: Decimal
+    due_date: date | None
+    priority: int
+    dds_category: str | None
+    dds_category_name: str | None
+    company_name: str
+    company_slug: str | None
+    days_left: int | None
+    can_pay: bool
+    overdue: bool
+
+
+class TotalsByPriority(BaseModel):
+    p1: Decimal
+    p2: Decimal
+    p3: Decimal
+    p4: Decimal
 
 
 class DashboardSummary(BaseModel):
     total_balance: Decimal
-    accounts_count: int
-    total_pending: Decimal
-    total_overdue: Decimal
-    by_company: list[CompanySummary]
+    balances_by_company: list[CompanyBalanceBlock]
+    urgent_payments: list[UrgentPayment]
+    free_balance: Decimal
+    totals_by_priority: TotalsByPriority
+    alerts: list[str]
