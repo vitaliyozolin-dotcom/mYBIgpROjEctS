@@ -1,17 +1,17 @@
 from app.routers import (
     accounts,
-    auth,
     companies,
     dashboard,
     dds_categories,
     payments,
+    tochka,
 )
 
 __all__ = [
     "accounts",
-    "auth",
     "companies",
     "dashboard",
     "dds_categories",
     "payments",
+    "tochka",
 ]

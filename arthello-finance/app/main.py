@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import __version__
 from app.config import settings
 from app.database import async_session_maker, get_db
-from app.routers import accounts, auth, companies, dashboard, dds_categories, payments
+from app.routers import accounts, companies, dashboard, dds_categories, payments, tochka
 from app.seeds import seed_all
 from app.services.scheduler import shutdown_scheduler, start_scheduler
 
@@ -57,7 +57,7 @@ app.include_router(companies.router)
 app.include_router(accounts.router)
 app.include_router(payments.router)
 app.include_router(dds_categories.router)
-app.include_router(auth.router)
+app.include_router(tochka.router)
 app.include_router(dashboard.router)
 
 

@@ -36,23 +36,16 @@ class Settings(BaseSettings):
     BANK_SYNC_INTERVAL_MINUTES: int = Field(default=30)
     DAILY_REPORT_HOUR: int = Field(default=9)
 
-    # Точка OAuth2
+    # Точка Open Banking v1.0 (UAPI), Client Credentials Flow.
     TOCHKA_CLIENT_ID: str = Field(default="")
     TOCHKA_CLIENT_SECRET: str = Field(default="")
-    TOCHKA_REDIRECT_URL: str = Field(
-        default="https://mybigprojects-production.up.railway.app/api/auth/tochka/callback"
-    )
-    # Точка Open Banking v1.0 (UAPI).
-    TOCHKA_AUTHORIZE_URL: str = Field(
-        default="https://enter.tochka.com/uapi/open-banking/v1.0/authorize"
-    )
     TOCHKA_TOKEN_URL: str = Field(
-        default="https://enter.tochka.com/uapi/open-banking/v1.0/token"
+        default="https://enter.tochka.com/uapi/open-banking/v1.0/oauth2/token"
     )
     TOCHKA_API_BASE: str = Field(
         default="https://enter.tochka.com/uapi/open-banking/v1.0"
     )
-    TOCHKA_SCOPE: str = Field(default="account_info balances statements")
+    TOCHKA_SCOPE: str = Field(default="accounts balances")
     TOCHKA_SYNC_INTERVAL_HOURS: int = Field(default=2)
 
     @property
