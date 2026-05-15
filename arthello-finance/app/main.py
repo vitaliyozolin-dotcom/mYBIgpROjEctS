@@ -8,8 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import __version__
 from app.config import settings
-from app.database import get_db
+from app.database import async_session_maker, get_db
 from app.routers import accounts, companies, dashboard, dds_categories, payments
+from app.seeds import seed_all
 from app.services.scheduler import shutdown_scheduler, start_scheduler
 
 logging.basicConfig(
@@ -22,6 +23,13 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting %s (env=%s)", settings.APP_NAME, settings.APP_ENV)
+    try:
+        async with async_session_maker() as session:
+            counts = await seed_all(session)
+            await session.commit()
+        logger.info("seed on startup: %s", counts)
+    except Exception:  # noqa: BLE001
+        logger.exception("seed on startup failed, continuing")
     start_scheduler()
     try:
         yield
