@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -10,6 +11,7 @@ import logging
 import secrets
 from urllib.parse import urlencode
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
@@ -121,3 +123,88 @@ async def tochka_callback(
 
     logger.info("tochka: token saved for company=%s (%s)", company_id, company.name)
     return RedirectResponse("/dashboard?bank=tochka&connected=1", status_code=302)
+
+
+# OpenID discovery: Keycloak публикует authorization_endpoint/token_endpoint
+# по пути /.well-known/openid-configuration. Точка либо за /auth/, либо без.
+_DISCOVERY_CANDIDATES: list[str] = [
+    "https://id.tochka.com/auth/realms/tochka/.well-known/openid-configuration",
+    "https://id.tochka.com/realms/tochka/.well-known/openid-configuration",
+    # На случай если у них другой realm/путь:
+    "https://id.tochka.com/auth/realms/master/.well-known/openid-configuration",
+    "https://enter.tochka.com/uapi/open-banking/v1.0/.well-known/openid-configuration",
+]
+
+
+async def _probe(client: httpx.AsyncClient, url: str) -> dict:
+    try:
+        r = await client.get(url)
+    except httpx.HTTPError as exc:
+        return {"url": url, "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    item: dict = {
+        "url": url,
+        "status_code": r.status_code,
+        "ok": r.is_success,
+        "headers": {
+            "content-type": r.headers.get("content-type"),
+            "location": r.headers.get("location"),
+            "server": r.headers.get("server"),
+        },
+    }
+
+    body_text = r.text
+    if "application/json" in (r.headers.get("content-type") or ""):
+        try:
+            parsed = r.json()
+        except ValueError:
+            item["body"] = body_text[:2000]
+        else:
+            # Если это openid-configuration — подсветим ключевые поля,
+            # а полный JSON положим целиком.
+            item["body"] = parsed
+            for key in (
+                "issuer",
+                "authorization_endpoint",
+                "token_endpoint",
+                "userinfo_endpoint",
+                "jwks_uri",
+                "end_session_endpoint",
+                "scopes_supported",
+                "response_types_supported",
+                "grant_types_supported",
+            ):
+                if key in parsed:
+                    item.setdefault("openid", {})[key] = parsed[key]
+    else:
+        item["body"] = body_text[:2000]
+    return item
+
+
+@router.get("/tochka/debug")
+async def tochka_debug():
+    """Снять OpenID discovery с возможных URL Точки.
+
+    Возвращает по каждому кандидату HTTP-статус, заголовки, тело
+    (для JSON — распарсенный), и для openid-configuration — выжимку
+    с authorization_endpoint / token_endpoint. Удобно когда не знаешь
+    точный реалм/префикс Keycloak'а Точки.
+    """
+
+    async with httpx.AsyncClient(
+        timeout=10.0, follow_redirects=False
+    ) as client:
+        results = await asyncio.gather(
+            *(_probe(client, url) for url in _DISCOVERY_CANDIDATES)
+        )
+
+    return {
+        "current_settings": {
+            "TOCHKA_AUTHORIZE_URL": settings.TOCHKA_AUTHORIZE_URL,
+            "TOCHKA_TOKEN_URL": settings.TOCHKA_TOKEN_URL,
+            "TOCHKA_API_BASE": settings.TOCHKA_API_BASE,
+            "TOCHKA_SCOPE": settings.TOCHKA_SCOPE,
+            "TOCHKA_REDIRECT_URL": settings.TOCHKA_REDIRECT_URL,
+        },
+        "probes": results,
+    }
