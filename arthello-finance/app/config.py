@@ -42,15 +42,16 @@ class Settings(BaseSettings):
     TOCHKA_REDIRECT_URL: str = Field(
         default="https://mybigprojects-production.up.railway.app/api/auth/tochka/callback"
     )
-    # Авторизация Точки — Keycloak-realm. Если у вас старая интеграция
-    # на /oauth2/authorize — переопределите эти переменные на Railway.
+    # Точка Open Banking v1.0 (UAPI).
     TOCHKA_AUTHORIZE_URL: str = Field(
-        default="https://id.tochka.com/realms/tochka/protocol/openid-connect/auth"
+        default="https://enter.tochka.com/uapi/open-banking/v1.0/authorize"
     )
     TOCHKA_TOKEN_URL: str = Field(
-        default="https://id.tochka.com/realms/tochka/protocol/openid-connect/token"
+        default="https://enter.tochka.com/uapi/open-banking/v1.0/token"
     )
-    TOCHKA_API_BASE: str = Field(default="https://enter.tochka.com/api/v1")
+    TOCHKA_API_BASE: str = Field(
+        default="https://enter.tochka.com/uapi/open-banking/v1.0"
+    )
     TOCHKA_SCOPE: str = Field(default="account_info balances statements")
     TOCHKA_SYNC_INTERVAL_HOURS: int = Field(default=2)
 
