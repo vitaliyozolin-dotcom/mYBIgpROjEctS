@@ -26,12 +26,9 @@ from app.models.oauth_token import OAuthToken
 
 logger = logging.getLogger(__name__)
 
-AUTHORIZE_URL = "https://id.tochka.com/oauth2/authorize"
-TOKEN_URL = "https://id.tochka.com/oauth2/token"
-API_BASE = "https://enter.tochka.com/api/v1"
 ACCOUNTS_PATH = "/bank-accounts/v1.0/accounts"
 
-DEFAULT_SCOPE = "account_info balances statements"
+DEFAULT_SCOPE = settings.TOCHKA_SCOPE
 HTTP_TIMEOUT = 20.0
 REFRESH_LEEWAY = timedelta(minutes=5)
 
@@ -51,7 +48,7 @@ async def exchange_code_for_token(code: str) -> dict[str, Any]:
         "client_secret": settings.TOCHKA_CLIENT_SECRET,
     }
     async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
-        r = await client.post(TOKEN_URL, data=data)
+        r = await client.post(settings.TOCHKA_TOKEN_URL, data=data)
     if r.status_code >= 400:
         raise TochkaError(f"token exchange failed: HTTP {r.status_code} {r.text[:300]}")
     return r.json()
@@ -109,7 +106,7 @@ async def refresh_access_token(db: AsyncSession, token: OAuthToken) -> OAuthToke
         "client_secret": settings.TOCHKA_CLIENT_SECRET,
     }
     async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
-        r = await client.post(TOKEN_URL, data=data)
+        r = await client.post(settings.TOCHKA_TOKEN_URL, data=data)
     if r.status_code >= 400:
         raise TochkaError(f"refresh failed: HTTP {r.status_code} {r.text[:300]}")
     payload = r.json()
@@ -182,7 +179,7 @@ async def get_balances(db: AsyncSession, company_id: int) -> list[Balance]:
     async def _fetch(t: OAuthToken) -> httpx.Response:
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
             return await client.get(
-                f"{API_BASE}{ACCOUNTS_PATH}",
+                f"{settings.TOCHKA_API_BASE}{ACCOUNTS_PATH}",
                 headers={"Authorization": f"Bearer {t.access_token}"},
             )
 

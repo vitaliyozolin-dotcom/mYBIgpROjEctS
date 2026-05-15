@@ -19,7 +19,6 @@ from app.config import settings
 from app.database import get_db
 from app.models.company import Company
 from app.services.tochka import (
-    AUTHORIZE_URL,
     DEFAULT_SCOPE,
     exchange_code_for_token,
     upsert_token,
@@ -84,8 +83,10 @@ async def tochka_login(
         "scope": DEFAULT_SCOPE,
         "state": state,
     }
-    url = f"{AUTHORIZE_URL}?{urlencode(params)}"
-    logger.info("tochka: redirecting company=%s to authorize URL", company.id)
+    url = f"{settings.TOCHKA_AUTHORIZE_URL}?{urlencode(params)}"
+    logger.info(
+        "tochka: redirecting company=%s to %s", company.id, settings.TOCHKA_AUTHORIZE_URL
+    )
     return RedirectResponse(url, status_code=302)
 
 
