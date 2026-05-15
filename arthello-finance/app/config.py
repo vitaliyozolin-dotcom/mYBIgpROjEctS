@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     BANK_SYNC_INTERVAL_MINUTES: int = Field(default=30)
     DAILY_REPORT_HOUR: int = Field(default=9)
 
+    # Точка OAuth2
+    TOCHKA_CLIENT_ID: str = Field(default="")
+    TOCHKA_CLIENT_SECRET: str = Field(default="")
+    TOCHKA_REDIRECT_URL: str = Field(
+        default="https://mybigprojects-production.up.railway.app/api/auth/tochka/callback"
+    )
+    TOCHKA_SYNC_INTERVAL_HOURS: int = Field(default=2)
+
     @property
     def cors_origins_list(self) -> list[str]:
         if not self.CORS_ORIGINS or self.CORS_ORIGINS == "*":

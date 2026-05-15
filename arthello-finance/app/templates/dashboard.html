@@ -126,6 +126,8 @@
     </div>
   </header>
 
+  <div id="flash" style="display:none; padding:12px 14px; border-radius:8px; margin-bottom:16px;"></div>
+
   <section>
     <div class="section-title">Итого по группе</div>
     <div class="total-card">
@@ -302,7 +304,24 @@ async function defer(id) {
   await loadSummary();
 }
 
+function showFlashFromQuery() {
+  const p = new URLSearchParams(location.search);
+  const flash = document.getElementById("flash");
+  if (p.get("bank") === "tochka" && p.get("connected") === "1") {
+    flash.style.display = "";
+    flash.style.background = "#dcfce7";
+    flash.style.color = "#166534";
+    flash.textContent = "Точка подключена ✅";
+  } else if (p.get("bank") === "tochka" && p.get("error")) {
+    flash.style.display = "";
+    flash.style.background = "#fee2e2";
+    flash.style.color = "#991b1b";
+    flash.textContent = "Ошибка авторизации Точки: " + p.get("error");
+  }
+}
+
 document.getElementById("refresh-btn").addEventListener("click", loadSummary);
+showFlashFromQuery();
 loadSummary();
 setInterval(loadSummary, 5 * 60 * 1000);  // auto-refresh каждые 5 минут
 </script>

@@ -1,3 +1,17 @@
-from app.routers import accounts, companies, dashboard, dds_categories, payments
+from app.routers import (
+    accounts,
+    auth,
+    companies,
+    dashboard,
+    dds_categories,
+    payments,
+)
 
-__all__ = ["accounts", "companies", "dashboard", "dds_categories", "payments"]
+__all__ = [
+    "accounts",
+    "auth",
+    "companies",
+    "dashboard",
+    "dds_categories",
+    "payments",
+]
