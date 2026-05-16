@@ -273,7 +273,12 @@ async def _get_valid_user_token(db: AsyncSession, company_id: int) -> OAuthToken
 
 
 def _parse_balance_amount(item: dict[str, Any]) -> Decimal | None:
-    """Достать Amount.Amount из элемента Balance. Учитывает creditDebitIndicator."""
+    """Достать Amount.Amount из элемента Balance.
+
+    В Точке creditDebitIndicator='Debit' для обычных расчётных счетов означает,
+    что счёт дебетовый (деньги есть), а НЕ задолженность. Знак не инвертируем —
+    всегда возвращаем Amount.Amount как положительное число.
+    """
 
     amount_obj = item.get("Amount") or item.get("amount") or {}
     if not isinstance(amount_obj, dict):
@@ -285,10 +290,6 @@ def _parse_balance_amount(item: dict[str, Any]) -> Decimal | None:
         value = Decimal(str(raw))
     except Exception:  # noqa: BLE001
         return None
-
-    indicator = item.get("creditDebitIndicator") or item.get("CreditDebitIndicator")
-    if isinstance(indicator, str) and indicator.lower() == "debit":
-        value = -value
     return value
 
 
@@ -315,8 +316,18 @@ async def fetch_balances_raw(db: AsyncSession, company_id: int) -> httpx.Respons
     return r
 
 
-async def get_balances(db: AsyncSession, company_id: int) -> list[Balance]:
-    """GET /balances → парсим Data.Balance[] с type=OpeningAvailable → balances."""
+async def get_balances(db: AsyncSession, company_id: int) -> dict[str, Any]:
+    """GET /balances → парсим Data.Balance[] с type=OpeningAvailable → balances.
+
+    Возвращает dict с saved-балансами и диагностикой матчинга:
+      {
+        "saved": [Balance, ...],
+        "tochka_account_ids": [...],   # cleaned (после split("/")[0])
+        "db_account_numbers": [...],   # все номера счетов компании в БД
+        "matched":  [...],
+        "no_match": [...],
+      }
+    """
 
     r = await fetch_balances_raw(db, company_id)
     if r.status_code >= 400:
@@ -330,8 +341,19 @@ async def get_balances(db: AsyncSession, company_id: int) -> list[Balance]:
         or []
     )
 
+    db_account_numbers_result = await db.scalars(
+        select(Account.account_number).where(
+            Account.company_id == company_id,
+            Account.account_number.is_not(None),
+        )
+    )
+    db_account_numbers = [n for n in db_account_numbers_result.all() if n]
+
     saved: list[Balance] = []
-    skipped_no_match: list[str] = []
+    tochka_account_ids: list[str] = []
+    matched: list[str] = []
+    no_match: list[str] = []
+
     for item in items:
         item_type = item.get("type") or item.get("Type")
         if item_type != CURRENT_BALANCE_TYPE:
@@ -344,6 +366,7 @@ async def get_balances(db: AsyncSession, company_id: int) -> list[Balance]:
 
         # Точка возвращает accountId как "40702810803500025668/044525104" (номер/БИК).
         account_number_clean = str(account_id).split("/")[0]
+        tochka_account_ids.append(account_number_clean)
 
         amount_obj = item.get("Amount") or {}
         currency = (
@@ -357,9 +380,10 @@ async def get_balances(db: AsyncSession, company_id: int) -> list[Balance]:
             )
         )
         if db_account is None:
-            skipped_no_match.append(account_id)
+            no_match.append(account_number_clean)
             continue
 
+        matched.append(account_number_clean)
         b = Balance(
             account_id=db_account.id,
             amount=amount,
@@ -371,10 +395,17 @@ async def get_balances(db: AsyncSession, company_id: int) -> list[Balance]:
 
     await db.flush()
     logger.info(
-        "tochka: company=%s, items=%s, saved=%s, no_match=%s",
+        "tochka: company=%s, items=%s, saved=%s, matched=%s, no_match=%s",
         company_id,
         len(items),
         len(saved),
-        skipped_no_match,
+        matched,
+        no_match,
     )
-    return saved
+    return {
+        "saved": saved,
+        "tochka_account_ids": tochka_account_ids,
+        "db_account_numbers": db_account_numbers,
+        "matched": matched,
+        "no_match": no_match,
+    }

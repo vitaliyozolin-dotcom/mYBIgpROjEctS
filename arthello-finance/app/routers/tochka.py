@@ -224,22 +224,29 @@ async def tochka_sync(
     company = await _resolve_company(db, company_slug)
 
     try:
-        balances = await get_balances(db, company.id)
+        result = await get_balances(db, company.id)
         await db.commit()
     except TochkaError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc))
 
-    details = [
+    saved = result["saved"]
+    saved_details = [
         {
             "account_id": b.account_id,
             "amount": float(b.amount),
             "currency": b.currency,
         }
-        for b in balances
+        for b in saved
     ]
 
     return {
         "synced": True,
-        "balances_updated": len(balances),
-        "details": details,
+        "balances_updated": len(saved),
+        "details": saved_details,
+        "matching": {
+            "tochka_account_ids": result["tochka_account_ids"],
+            "db_account_numbers": result["db_account_numbers"],
+            "matched": result["matched"],
+            "no_match": result["no_match"],
+        },
     }

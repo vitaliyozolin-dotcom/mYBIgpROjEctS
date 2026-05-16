@@ -73,9 +73,9 @@ async def job_tochka_balances() -> None:
     for cid in company_ids:
         try:
             async with async_session_maker() as session:
-                saved = await get_balances(session, cid)
+                result_dict = await get_balances(session, cid)
                 await session.commit()
-            total_saved += len(saved)
+            total_saved += len(result_dict["saved"])
         except TochkaError as exc:
             logger.warning("tochka sync: company=%s skipped: %s", cid, exc)
         except Exception:  # noqa: BLE001
