@@ -342,6 +342,9 @@ async def get_balances(db: AsyncSession, company_id: int) -> list[Balance]:
         if not account_id or amount is None:
             continue
 
+        # Точка возвращает accountId как "40702810803500025668/044525104" (номер/БИК).
+        account_number_clean = str(account_id).split("/")[0]
+
         amount_obj = item.get("Amount") or {}
         currency = (
             amount_obj.get("Currency") if isinstance(amount_obj, dict) else None
@@ -350,7 +353,7 @@ async def get_balances(db: AsyncSession, company_id: int) -> list[Balance]:
         db_account = await db.scalar(
             select(Account).where(
                 Account.company_id == company_id,
-                Account.account_number == account_id,
+                Account.account_number == account_number_clean,
             )
         )
         if db_account is None:
