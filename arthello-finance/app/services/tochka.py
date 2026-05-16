@@ -1,15 +1,18 @@
-"""Интеграция с Точка API — Open Banking v1.0, Client Credentials Flow.
+"""Точка Open Banking — реальная схема интеграции.
+
+Документация: https://enter.tochka.com/uapi/open-banking/v1.0/docs
 
 Поток:
-1. POST {TOCHKA_TOKEN_URL} с grant_type=client_credentials, client_id,
-   client_secret, scope.
-2. В ответ access_token (Bearer) + expires_in.
-3. Дальнейшие запросы к API_BASE/accounts со заголовком
-   Authorization: Bearer <token>.
+  1. client_credentials → "app-token" (для админских операций)
+  2. POST /uapi/v1.0/consents с app-token → consent_id
+  3. Редирект пользователя на /connect/authorize?...&consent_id=...
+  4. Callback с ?code → POST /connect/token grant_type=authorization_code
+     → access_token (24ч) + refresh_token (30 дней) пользователя
+  5. При истечении access_token → POST /connect/token grant_type=refresh_token
 
-Токен сохраняем в таблицу oauth_tokens на (company_id, bank=TOCHKA), чтобы
-ассоциировать с конкретной компанией. Реальные креды (client_id/secret)
-у нас общие — это просто способ держать живой Bearer и знать, когда обновить.
+User-токен хранится в oauth_tokens по (company_id, bank=TOCHKA).
+App-токен не сохраняем — он короткоживущий, запрашивается на лету
+при создании consent'а.
 """
 
 from __future__ import annotations
@@ -30,9 +33,18 @@ from app.models.oauth_token import OAuthToken
 
 logger = logging.getLogger(__name__)
 
+CONSENTS_PATH = "/consents"
 ACCOUNTS_PATH = "/accounts"
 HTTP_TIMEOUT = 20.0
 REFRESH_LEEWAY = timedelta(minutes=2)
+
+DEFAULT_PERMISSIONS: list[str] = [
+    "ReadAccountsBasic",
+    "ReadAccountsDetail",
+    "ReadBalances",
+    "ReadStatements",
+    "ReadCustomerData",
+]
 
 
 class TochkaError(Exception):
@@ -43,16 +55,11 @@ def _is_configured() -> bool:
     return bool(settings.TOCHKA_CLIENT_ID and settings.TOCHKA_CLIENT_SECRET)
 
 
-def _is_token_alive(token: OAuthToken | None) -> bool:
-    if token is None or not token.access_token:
-        return False
-    if token.expires_at is None:
-        return False
-    return token.expires_at - REFRESH_LEEWAY > datetime.now(timezone.utc)
+# ─── ШАГ 1 — client_credentials app-token ────────────────────────────────────
 
 
-async def _request_new_token() -> dict[str, Any]:
-    """POST на token endpoint Точки с grant_type=client_credentials."""
+async def get_app_token() -> str:
+    """ШАГ 1. POST /connect/token grant_type=client_credentials → app access_token."""
 
     if not _is_configured():
         raise TochkaError("TOCHKA_CLIENT_ID / TOCHKA_CLIENT_SECRET are not set")
@@ -63,29 +70,140 @@ async def _request_new_token() -> dict[str, Any]:
         "client_secret": settings.TOCHKA_CLIENT_SECRET,
         "scope": settings.TOCHKA_SCOPE,
     }
-    headers = {"Accept": "application/json"}
-    logger.info("tochka: requesting client_credentials token, scope=%r", settings.TOCHKA_SCOPE)
-
     async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
-        r = await client.post(settings.TOCHKA_TOKEN_URL, data=data, headers=headers)
-
+        r = await client.post(
+            settings.TOCHKA_TOKEN_URL,
+            data=data,
+            headers={"Accept": "application/json"},
+        )
     if r.status_code >= 400:
         raise TochkaError(
-            f"token endpoint returned HTTP {r.status_code}: {r.text[:500]}"
+            f"client_credentials failed: HTTP {r.status_code}: {r.text[:500]}"
         )
     try:
-        return r.json()
+        payload = r.json()
     except ValueError as exc:
-        raise TochkaError(f"token endpoint returned non-JSON: {r.text[:500]}") from exc
+        raise TochkaError(f"non-JSON from token endpoint: {r.text[:500]}") from exc
+    token = payload.get("access_token")
+    if not token:
+        raise TochkaError(f"no access_token in payload: {payload}")
+    return token
 
 
-async def _upsert_token(
+# ─── ШАГ 2 — создать consent ─────────────────────────────────────────────────
+
+
+async def create_consent(
+    app_token: str, permissions: list[str] | None = None
+) -> str:
+    """ШАГ 2. POST /uapi/v1.0/consents с app_token → consent_id."""
+
+    body: dict[str, Any] = {
+        "Data": {"permissions": permissions or DEFAULT_PERMISSIONS}
+    }
+    url = f"{settings.TOCHKA_API_BASE}{CONSENTS_PATH}"
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        r = await client.post(
+            url,
+            json=body,
+            headers={
+                "Authorization": f"Bearer {app_token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+        )
+    if r.status_code >= 400:
+        raise TochkaError(f"consents API HTTP {r.status_code}: {r.text[:500]}")
+    try:
+        data = r.json()
+    except ValueError as exc:
+        raise TochkaError(f"non-JSON from consents: {r.text[:500]}") from exc
+
+    consent_id = (
+        (data.get("Data") or {}).get("consentId")
+        or (data.get("Data") or {}).get("consent_id")
+        or data.get("consentId")
+        or data.get("consent_id")
+    )
+    if not consent_id:
+        raise TochkaError(f"no consentId in response: {data}")
+    return str(consent_id)
+
+
+# ─── ШАГ 4 — обмен code на пользовательский токен ────────────────────────────
+
+
+async def exchange_code_for_token(code: str) -> dict[str, Any]:
+    """ШАГ 4. POST /connect/token grant_type=authorization_code → access+refresh."""
+
+    if not _is_configured():
+        raise TochkaError("TOCHKA_CLIENT_ID / TOCHKA_CLIENT_SECRET are not set")
+
+    data = {
+        "grant_type": "authorization_code",
+        "client_id": settings.TOCHKA_CLIENT_ID,
+        "client_secret": settings.TOCHKA_CLIENT_SECRET,
+        "code": code,
+        "redirect_uri": settings.TOCHKA_REDIRECT_URL,
+    }
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        r = await client.post(
+            settings.TOCHKA_TOKEN_URL,
+            data=data,
+            headers={"Accept": "application/json"},
+        )
+    if r.status_code >= 400:
+        raise TochkaError(
+            f"authorization_code exchange failed: HTTP {r.status_code}: {r.text[:500]}"
+        )
+    return r.json()
+
+
+# ─── ШАГ 5 — refresh_token ───────────────────────────────────────────────────
+
+
+async def refresh_user_token(db: AsyncSession, token: OAuthToken) -> OAuthToken:
+    """ШАГ 5. POST /connect/token grant_type=refresh_token → новый access+refresh."""
+
+    if not token.refresh_token:
+        raise TochkaError("no refresh_token stored — needs re-authorization")
+    data = {
+        "grant_type": "refresh_token",
+        "refresh_token": token.refresh_token,
+        "client_id": settings.TOCHKA_CLIENT_ID,
+        "client_secret": settings.TOCHKA_CLIENT_SECRET,
+    }
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        r = await client.post(
+            settings.TOCHKA_TOKEN_URL,
+            data=data,
+            headers={"Accept": "application/json"},
+        )
+    if r.status_code >= 400:
+        raise TochkaError(f"refresh failed: HTTP {r.status_code}: {r.text[:500]}")
+    payload = r.json()
+
+    token.access_token = payload["access_token"]
+    if payload.get("refresh_token"):
+        token.refresh_token = payload["refresh_token"]
+    expires_in = payload.get("expires_in")
+    if expires_in:
+        token.expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+    if payload.get("scope"):
+        token.scope = payload["scope"]
+    await db.flush()
+    return token
+
+
+# ─── upsert и доступ к токену пользователя ───────────────────────────────────
+
+
+async def upsert_user_token(
     db: AsyncSession, company_id: int, payload: dict[str, Any]
 ) -> OAuthToken:
     access_token = payload.get("access_token")
     if not access_token:
         raise TochkaError(f"no access_token in payload: {payload}")
-
     expires_in = payload.get("expires_in")
     expires_at = (
         datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
@@ -93,6 +211,7 @@ async def _upsert_token(
         else None
     )
     scope = payload.get("scope") or settings.TOCHKA_SCOPE
+    refresh_token = payload.get("refresh_token")
 
     existing = await db.scalar(
         select(OAuthToken).where(
@@ -105,14 +224,15 @@ async def _upsert_token(
             company_id=company_id,
             bank=Bank.TOCHKA,
             access_token=access_token,
-            refresh_token=None,  # client_credentials не выдаёт refresh_token
+            refresh_token=refresh_token,
             expires_at=expires_at,
             scope=scope,
         )
         db.add(token)
     else:
         existing.access_token = access_token
-        existing.refresh_token = None
+        if refresh_token:
+            existing.refresh_token = refresh_token
         existing.expires_at = expires_at
         existing.scope = scope
         token = existing
@@ -120,33 +240,31 @@ async def _upsert_token(
     return token
 
 
-async def get_or_refresh_token(db: AsyncSession, company_id: int) -> OAuthToken:
-    """Вернуть живой токен для компании, обновив при необходимости.
-
-    Если в БД лежит токен с expires_at в будущем (с запасом REFRESH_LEEWAY) —
-    отдаём его. Иначе запрашиваем новый client_credentials-токен у Точки и
-    апсертим.
-    """
-
-    existing = await db.scalar(
+async def _get_valid_user_token(db: AsyncSession, company_id: int) -> OAuthToken:
+    token = await db.scalar(
         select(OAuthToken).where(
             OAuthToken.company_id == company_id,
             OAuthToken.bank == Bank.TOCHKA,
         )
     )
-    if _is_token_alive(existing):
-        return existing
+    if token is None:
+        raise TochkaError(
+            f"no Tochka token for company_id={company_id}; "
+            "visit /api/auth/tochka/login first"
+        )
+    if (
+        token.expires_at is not None
+        and token.expires_at - REFRESH_LEEWAY <= datetime.now(timezone.utc)
+    ):
+        logger.info("tochka: access_token expired for company=%s, refreshing", company_id)
+        token = await refresh_user_token(db, token)
+    return token
 
-    payload = await _request_new_token()
-    return await _upsert_token(db, company_id, payload)
+
+# ─── работа с балансами ──────────────────────────────────────────────────────
 
 
 def _parse_account(item: dict[str, Any]) -> tuple[str | None, Decimal | None]:
-    """Достать (account_number, amount) из элемента ответа Точки.
-
-    Open Banking-форма у Точки нестабильна — пробуем несколько ключей.
-    """
-
     account_number = (
         item.get("accountId")
         or item.get("account_number")
@@ -164,7 +282,6 @@ def _parse_account(item: dict[str, Any]) -> tuple[str | None, Decimal | None]:
         amounts = item.get("Amount") or item.get("amounts")
         if isinstance(amounts, list) and amounts:
             balance_raw = amounts[0].get("amount") or amounts[0].get("value")
-
     if balance_raw is None:
         return account_number, None
     try:
@@ -174,12 +291,9 @@ def _parse_account(item: dict[str, Any]) -> tuple[str | None, Decimal | None]:
 
 
 async def fetch_accounts_raw(db: AsyncSession, company_id: int) -> httpx.Response:
-    """Сходить в /accounts с токеном company_id и вернуть сырой Response.
+    """GET /accounts с user-токеном. На 401 рефрешим и повторяем."""
 
-    На 401 обновляет токен (запрашивает новый client_credentials) и повторяет.
-    """
-
-    token = await get_or_refresh_token(db, company_id)
+    token = await _get_valid_user_token(db, company_id)
 
     async def _do(t: OAuthToken) -> httpx.Response:
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
@@ -193,9 +307,8 @@ async def fetch_accounts_raw(db: AsyncSession, company_id: int) -> httpx.Respons
 
     r = await _do(token)
     if r.status_code == 401:
-        logger.info("tochka: 401 from /accounts, requesting fresh token")
-        payload = await _request_new_token()
-        token = await _upsert_token(db, company_id, payload)
+        logger.info("tochka: 401 from /accounts, refreshing user token")
+        token = await refresh_user_token(db, token)
         r = await _do(token)
     return r
 
@@ -209,7 +322,7 @@ async def get_balances(db: AsyncSession, company_id: int) -> list[Balance]:
 
     payload = r.json()
     items: list[dict[str, Any]] = (
-        payload.get("Data", {}).get("Account")
+        (payload.get("Data") or {}).get("Account")
         or payload.get("accounts")
         or payload.get("data")
         or []
