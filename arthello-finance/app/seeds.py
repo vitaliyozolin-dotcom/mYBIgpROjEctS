@@ -50,23 +50,29 @@ COMPANIES: list[dict] = [
 ]
 
 
-# (company_slug, bank | None, account_type, name)
-ACCOUNTS: list[tuple[str, Bank | None, AccountType, str]] = [
+# (slug, bank | None, account_type, name, account_number, legacy_name)
+# account_number — реальный номер счёта в Точке (нужен для матчинга /balances).
+# legacy_name — старое имя строки (для миграции при переименовании счёта).
+ACCOUNTS: list[tuple[str, Bank | None, AccountType, str, str | None, str | None]] = [
     # ООО АртХелло
-    ("atlas", Bank.TOCHKA, AccountType.MAIN, "Атлас Точка основной"),
-    ("atlas", Bank.TOCHKA, AccountType.TAX, "Атлас Точка налоги"),
-    ("atlas", Bank.TBANK, AccountType.MAIN, "Атлас Тбанк основной"),
-    ("atlas", Bank.TBANK, AccountType.DBP, "Атлас Тбанк ДБП"),
-    ("atlas", None, AccountType.CASH, "Атлас касса нал"),
-    # ИП Тюрин
-    ("listvenный", Bank.TOCHKA, AccountType.MAIN, "Лиственный Точка основной"),
-    ("listvenный", Bank.TBANK, AccountType.MAIN, "Лиственный Тбанк основной"),
-    ("listvenный", None, AccountType.CASH, "Лиственный касса нал"),
+    ("atlas", Bank.TOCHKA, AccountType.MAIN, "Атлас Точка основной", "40702810803500025668", None),
+    ("atlas", Bank.TOCHKA, AccountType.TAX, "Атлас Точка налоги", "40702810403500027875", None),
+    ("atlas", Bank.TBANK, AccountType.MAIN, "Атлас Тбанк основной", None, None),
+    # Был "Атлас Тбанк ДБП" → реально это счёт в Точке, переименовываем.
+    ("atlas", Bank.TOCHKA, AccountType.DBP, "Атлас Точка ДБП", "40702810520000192963", "Атлас Тбанк ДБП"),
+    ("atlas", Bank.TOCHKA, AccountType.RESERVE, "Атлас Точка резервный", "40702810503270002143", None),
+    ("atlas", None, AccountType.CASH, "Атлас касса нал", None, None),
+    # ИП Тюрин Павел Олегович
+    ("listvenный", Bank.TOCHKA, AccountType.MAIN, "Лиственный Точка основной", "40702810220000204973", None),
+    ("listvenный", Bank.TBANK, AccountType.MAIN, "Лиственный Тбанк основной", None, None),
+    ("listvenный", Bank.TOCHKA, AccountType.RESERVE, "Лиственный Точка резервный", "40702810020000236905", None),
+    ("listvenный", None, AccountType.CASH, "Лиственный касса нал", None, None),
     # ООО УК Детское образование
-    ("uk", Bank.TOCHKA, AccountType.MAIN, "УК Точка основной"),
-    ("uk", Bank.TOCHKA, AccountType.TAX, "УК Точка налоги"),
-    ("uk", None, AccountType.CASH, "УК касса нал"),
-    ("uk", Bank.TOCHKA, AccountType.MAIN, "Школа 1-11 Точка основной"),
+    ("uk", Bank.TOCHKA, AccountType.MAIN, "УК Точка основной", "40702810520000212115", None),
+    ("uk", Bank.TOCHKA, AccountType.TAX, "УК Точка налоги", None, None),
+    ("uk", Bank.TOCHKA, AccountType.RESERVE, "УК Точка резервный", "40702810020000078781", None),
+    ("uk", None, AccountType.CASH, "УК касса нал", None, None),
+    ("uk", Bank.TOCHKA, AccountType.MAIN, "Школа 1-11 Точка основной", None, None),
 ]
 
 
@@ -150,7 +156,7 @@ BALANCES: list[tuple[str, Decimal]] = [
     ("Атлас Точка основной", Decimal("280000")),
     ("Атлас Тбанк основной", Decimal("95000")),
     ("Атлас Точка налоги", Decimal("45000")),
-    ("Атлас Тбанк ДБП", Decimal("120000")),
+    ("Атлас Точка ДБП", Decimal("120000")),
     ("Атлас касса нал", Decimal("15000")),
     ("Лиственный Точка основной", Decimal("85000")),
     ("Лиственный Тбанк основной", Decimal("30000")),
@@ -264,34 +270,99 @@ async def _seed_companies(session: AsyncSession) -> tuple[int, dict[str, int]]:
     return added, slug_to_id
 
 
-async def _seed_accounts(
-    session: AsyncSession, slug_to_id: dict[str, int]
-) -> tuple[int, dict[str, int]]:
-    added = 0
-    name_to_id: dict[str, int] = {}
-    for slug, bank, acc_type, name in ACCOUNTS:
-        company_id = slug_to_id[slug]
+async def _find_account(
+    session: AsyncSession,
+    company_id: int,
+    name: str,
+    account_number: str | None,
+    legacy_name: str | None,
+) -> Account | None:
+    """Найти существующий Account в порядке приоритета:
+    1) по account_number (он UNIQUE),
+    2) по (company_id, name),
+    3) по (company_id, legacy_name) — для переименований.
+    """
+
+    if account_number:
+        existing = await session.scalar(
+            select(Account).where(Account.account_number == account_number)
+        )
+        if existing is not None:
+            return existing
+
+    existing = await session.scalar(
+        select(Account).where(
+            Account.company_id == company_id, Account.name == name
+        )
+    )
+    if existing is not None:
+        return existing
+
+    if legacy_name:
         existing = await session.scalar(
             select(Account).where(
-                Account.company_id == company_id,
-                Account.name == name,
+                Account.company_id == company_id, Account.name == legacy_name
             )
         )
         if existing is not None:
-            name_to_id[name] = existing.id
-            continue
-        account = Account(
-            company_id=company_id,
-            bank=bank,
-            account_type=acc_type,
-            name=name,
-            is_active=True,
+            return existing
+
+    return None
+
+
+async def _seed_accounts(
+    session: AsyncSession, slug_to_id: dict[str, int]
+) -> tuple[int, int, dict[str, int]]:
+    """Upsert счетов. Возвращает (added, updated, name_to_id)."""
+
+    added = 0
+    updated = 0
+    name_to_id: dict[str, int] = {}
+
+    for slug, bank, acc_type, name, account_number, legacy_name in ACCOUNTS:
+        company_id = slug_to_id[slug]
+        existing = await _find_account(
+            session, company_id, name, account_number, legacy_name
         )
-        session.add(account)
+
+        if existing is None:
+            account = Account(
+                company_id=company_id,
+                bank=bank,
+                account_type=acc_type,
+                name=name,
+                account_number=account_number,
+                is_active=True,
+            )
+            session.add(account)
+            await session.flush()
+            name_to_id[name] = account.id
+            added += 1
+            continue
+
+        # Обновляем поля, если они отличаются. Никогда не затираем
+        # уже присвоенный account_number значением None.
+        changed = False
+        if existing.name != name:
+            existing.name = name
+            changed = True
+        if existing.bank != bank:
+            existing.bank = bank
+            changed = True
+        if existing.account_type != acc_type:
+            existing.account_type = acc_type
+            changed = True
+        if account_number and existing.account_number != account_number:
+            existing.account_number = account_number
+            changed = True
+        if changed:
+            updated += 1
+
+        name_to_id[name] = existing.id
+
+    if added or updated:
         await session.flush()
-        name_to_id[name] = account.id
-        added += 1
-    return added, name_to_id
+    return added, updated, name_to_id
 
 
 async def _seed_dds_categories(session: AsyncSession) -> int:
@@ -374,7 +445,9 @@ async def seed_all(session: AsyncSession) -> dict[str, int]:
     строк в каждой таблице."""
 
     companies_added, slug_to_id = await _seed_companies(session)
-    accounts_added, name_to_id = await _seed_accounts(session, slug_to_id)
+    accounts_added, accounts_updated, name_to_id = await _seed_accounts(
+        session, slug_to_id
+    )
     dds_added = await _seed_dds_categories(session)
     balances_added = await _seed_balances(session, name_to_id)
     payments_added = await _seed_payments(session, slug_to_id)
@@ -382,6 +455,7 @@ async def seed_all(session: AsyncSession) -> dict[str, int]:
     return {
         "companies": companies_added,
         "accounts": accounts_added,
+        "accounts_updated": accounts_updated,
         "dds_categories": dds_added,
         "balances": balances_added,
         "payment_queue": payments_added,

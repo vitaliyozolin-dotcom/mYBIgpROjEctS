@@ -18,6 +18,7 @@ class AccountType(str, enum.Enum):
     TAX = "tax"
     DBP = "dbp"
     CASH = "cash"
+    RESERVE = "reserve"
 
 
 class Account(Base):
