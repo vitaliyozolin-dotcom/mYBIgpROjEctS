@@ -25,6 +25,7 @@ from app.services.tochka import (
     exchange_code_for_token,
     fetch_balances_raw,
     get_app_token,
+    get_balances,
     upsert_user_token,
 )
 
@@ -206,4 +207,39 @@ async def tochka_test_connection(
             },
             "body": body,
         },
+    }
+
+
+# ─── /sync ───────────────────────────────────────────────────────────────────
+
+
+@router.post("/api/tochka/sync")
+async def tochka_sync(
+    company_slug: str = Query(default="atlas"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ручная синхронизация балансов: GET /balances → сохранить в БД."""
+
+    _ensure_configured()
+    company = await _resolve_company(db, company_slug)
+
+    try:
+        balances = await get_balances(db, company.id)
+        await db.commit()
+    except TochkaError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc))
+
+    details = [
+        {
+            "account_id": b.account_id,
+            "amount": float(b.amount),
+            "currency": b.currency,
+        }
+        for b in balances
+    ]
+
+    return {
+        "synced": True,
+        "balances_updated": len(balances),
+        "details": details,
     }

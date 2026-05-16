@@ -26,6 +26,12 @@
   }
   button.refresh:hover { background: #333; }
   button.refresh:disabled { opacity: 0.5; cursor: wait; }
+  button.sync {
+    background: #1d6fa5; color: #fff; border: 0; padding: 8px 14px;
+    border-radius: 8px; cursor: pointer; font-size: 13px;
+  }
+  button.sync:hover { background: #155d8a; }
+  button.sync:disabled { opacity: 0.5; cursor: wait; }
 
   section { margin-bottom: 24px; }
   .section-title {
@@ -122,6 +128,7 @@
     <h1>ARTHELLO Finance</h1>
     <div class="meta">
       <span id="updated">—</span>
+      <button class="sync" id="sync-btn">Синхронизировать</button>
       <button class="refresh" id="refresh-btn">Обновить</button>
     </div>
   </header>
@@ -320,6 +327,38 @@ function showFlashFromQuery() {
   }
 }
 
+async function syncBalances() {
+  const btn = document.getElementById("sync-btn");
+  const flash = document.getElementById("flash");
+  btn.disabled = true;
+  btn.textContent = "Синхронизация…";
+  try {
+    const r = await fetch("/api/tochka/sync?company_slug=atlas", { method: "POST", cache: "no-store" });
+    const data = await r.json();
+    if (!r.ok) {
+      flash.style.display = "";
+      flash.style.background = "#fee2e2";
+      flash.style.color = "#991b1b";
+      flash.textContent = "Ошибка синхронизации: " + (data.detail || r.status);
+    } else {
+      flash.style.display = "";
+      flash.style.background = "#dcfce7";
+      flash.style.color = "#166534";
+      flash.textContent = `Балансы обновлены из Точки ✅ (${data.balances_updated} счетов)`;
+      await loadSummary();
+    }
+  } catch (e) {
+    flash.style.display = "";
+    flash.style.background = "#fee2e2";
+    flash.style.color = "#991b1b";
+    flash.textContent = "Ошибка синхронизации: " + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Синхронизировать";
+  }
+}
+
+document.getElementById("sync-btn").addEventListener("click", syncBalances);
 document.getElementById("refresh-btn").addEventListener("click", loadSummary);
 showFlashFromQuery();
 loadSummary();
