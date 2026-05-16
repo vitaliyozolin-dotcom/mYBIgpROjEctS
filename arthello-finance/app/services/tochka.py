@@ -1,18 +1,19 @@
-"""Точка Open Banking — реальная схема интеграции.
+"""Точка Open Banking — реальный flow.
 
-Документация: https://enter.tochka.com/uapi/open-banking/v1.0/docs
+Документация: developers.tochka.com
 
-Поток:
-  1. client_credentials → "app-token" (для админских операций)
-  2. POST /uapi/v1.0/consents с app-token → consent_id
-  3. Редирект пользователя на /connect/authorize?...&consent_id=...
-  4. Callback с ?code → POST /connect/token grant_type=authorization_code
-     → access_token (24ч) + refresh_token (30 дней) пользователя
-  5. При истечении access_token → POST /connect/token grant_type=refresh_token
+Endpoints:
+  Token:      POST https://enter.tochka.com/connect/token
+  Authorize:  GET  https://enter.tochka.com/connect/authorize
+  Consents:   POST https://enter.tochka.com/uapi/v1.0/consents
+  Balances:   GET  https://enter.tochka.com/uapi/open-banking/v1.0/balances
+  (per acc:   GET  .../uapi/open-banking/v1.0/accounts/{accountId}/balances)
 
-User-токен хранится в oauth_tokens по (company_id, bank=TOCHKA).
-App-токен не сохраняем — он короткоживущий, запрашивается на лету
-при создании consent'а.
+3 шага:
+  1. /login   — client_credentials → consent → редирект на /connect/authorize
+  2. /callback — обмен code на access+refresh
+  3. get_balances — GET /balances с user-токеном, парсит Data.Balance[]
+     с type=OpeningAvailable как текущий остаток
 """
 
 from __future__ import annotations
@@ -33,10 +34,10 @@ from app.models.oauth_token import OAuthToken
 
 logger = logging.getLogger(__name__)
 
-CONSENTS_PATH = "/consents"
-ACCOUNTS_PATH = "/accounts"
+BALANCES_PATH = "/balances"
 HTTP_TIMEOUT = 20.0
-REFRESH_LEEWAY = timedelta(minutes=2)
+# Рефрешим access_token если до его истечения осталось < 2 часов.
+REFRESH_LEEWAY = timedelta(hours=2)
 
 DEFAULT_PERMISSIONS: list[str] = [
     "ReadAccountsBasic",
@@ -45,6 +46,9 @@ DEFAULT_PERMISSIONS: list[str] = [
     "ReadStatements",
     "ReadCustomerData",
 ]
+
+# Тип записи Balance, который считаем "текущим остатком".
+CURRENT_BALANCE_TYPE = "OpeningAvailable"
 
 
 class TochkaError(Exception):
@@ -55,11 +59,11 @@ def _is_configured() -> bool:
     return bool(settings.TOCHKA_CLIENT_ID and settings.TOCHKA_CLIENT_SECRET)
 
 
-# ─── ШАГ 1 — client_credentials app-token ────────────────────────────────────
+# ─── ШАГ 1a — client_credentials app-токен ───────────────────────────────────
 
 
 async def get_app_token() -> str:
-    """ШАГ 1. POST /connect/token grant_type=client_credentials → app access_token."""
+    """POST /connect/token grant_type=client_credentials → app access_token."""
 
     if not _is_configured():
         raise TochkaError("TOCHKA_CLIENT_ID / TOCHKA_CLIENT_SECRET are not set")
@@ -90,21 +94,20 @@ async def get_app_token() -> str:
     return token
 
 
-# ─── ШАГ 2 — создать consent ─────────────────────────────────────────────────
+# ─── ШАГ 1b — создать consent ────────────────────────────────────────────────
 
 
 async def create_consent(
     app_token: str, permissions: list[str] | None = None
 ) -> str:
-    """ШАГ 2. POST /uapi/v1.0/consents с app_token → consent_id."""
+    """POST {TOCHKA_CONSENTS_URL} с app_token → consent_id."""
 
     body: dict[str, Any] = {
         "Data": {"permissions": permissions or DEFAULT_PERMISSIONS}
     }
-    url = f"{settings.TOCHKA_API_BASE}{CONSENTS_PATH}"
     async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
         r = await client.post(
-            url,
+            settings.TOCHKA_CONSENTS_URL,
             json=body,
             headers={
                 "Authorization": f"Bearer {app_token}",
@@ -130,11 +133,11 @@ async def create_consent(
     return str(consent_id)
 
 
-# ─── ШАГ 4 — обмен code на пользовательский токен ────────────────────────────
+# ─── ШАГ 2 — обмен code на user-токен ────────────────────────────────────────
 
 
 async def exchange_code_for_token(code: str) -> dict[str, Any]:
-    """ШАГ 4. POST /connect/token grant_type=authorization_code → access+refresh."""
+    """POST /connect/token grant_type=authorization_code → access+refresh."""
 
     if not _is_configured():
         raise TochkaError("TOCHKA_CLIENT_ID / TOCHKA_CLIENT_SECRET are not set")
@@ -159,11 +162,11 @@ async def exchange_code_for_token(code: str) -> dict[str, Any]:
     return r.json()
 
 
-# ─── ШАГ 5 — refresh_token ───────────────────────────────────────────────────
+# ─── refresh_token ───────────────────────────────────────────────────────────
 
 
 async def refresh_user_token(db: AsyncSession, token: OAuthToken) -> OAuthToken:
-    """ШАГ 5. POST /connect/token grant_type=refresh_token → новый access+refresh."""
+    """POST /connect/token grant_type=refresh_token → новый access+refresh."""
 
     if not token.refresh_token:
         raise TochkaError("no refresh_token stored — needs re-authorization")
@@ -252,53 +255,52 @@ async def _get_valid_user_token(db: AsyncSession, company_id: int) -> OAuthToken
             f"no Tochka token for company_id={company_id}; "
             "visit /api/auth/tochka/login first"
         )
+    # Рефрешим, если осталось меньше REFRESH_LEEWAY (2 часа) до истечения.
     if (
         token.expires_at is not None
         and token.expires_at - REFRESH_LEEWAY <= datetime.now(timezone.utc)
     ):
-        logger.info("tochka: access_token expired for company=%s, refreshing", company_id)
+        logger.info(
+            "tochka: access_token expiring soon for company=%s (%s), refreshing",
+            company_id,
+            token.expires_at.isoformat() if token.expires_at else "?",
+        )
         token = await refresh_user_token(db, token)
     return token
 
 
-# ─── работа с балансами ──────────────────────────────────────────────────────
+# ─── ШАГ 3 — балансы ─────────────────────────────────────────────────────────
 
 
-def _parse_account(item: dict[str, Any]) -> tuple[str | None, Decimal | None]:
-    account_number = (
-        item.get("accountId")
-        or item.get("account_number")
-        or item.get("accountCode")
-        or item.get("nominalAccountCode")
-        or item.get("number")
-    )
-    balance_raw: Any = None
-    bal = item.get("balance")
-    if isinstance(bal, dict):
-        balance_raw = bal.get("value") or bal.get("amount")
-    elif bal is not None:
-        balance_raw = bal
-    if balance_raw is None:
-        amounts = item.get("Amount") or item.get("amounts")
-        if isinstance(amounts, list) and amounts:
-            balance_raw = amounts[0].get("amount") or amounts[0].get("value")
-    if balance_raw is None:
-        return account_number, None
+def _parse_balance_amount(item: dict[str, Any]) -> Decimal | None:
+    """Достать Amount.Amount из элемента Balance. Учитывает creditDebitIndicator."""
+
+    amount_obj = item.get("Amount") or item.get("amount") or {}
+    if not isinstance(amount_obj, dict):
+        return None
+    raw = amount_obj.get("Amount") or amount_obj.get("amount") or amount_obj.get("value")
+    if raw is None:
+        return None
     try:
-        return account_number, Decimal(str(balance_raw))
+        value = Decimal(str(raw))
     except Exception:  # noqa: BLE001
-        return account_number, None
+        return None
+
+    indicator = item.get("creditDebitIndicator") or item.get("CreditDebitIndicator")
+    if isinstance(indicator, str) and indicator.lower() == "debit":
+        value = -value
+    return value
 
 
-async def fetch_accounts_raw(db: AsyncSession, company_id: int) -> httpx.Response:
-    """GET /accounts с user-токеном. На 401 рефрешим и повторяем."""
+async def fetch_balances_raw(db: AsyncSession, company_id: int) -> httpx.Response:
+    """GET {API_BASE}/balances с user-токеном. На 401 рефрешим и повторяем."""
 
     token = await _get_valid_user_token(db, company_id)
 
     async def _do(t: OAuthToken) -> httpx.Response:
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
             return await client.get(
-                f"{settings.TOCHKA_API_BASE}{ACCOUNTS_PATH}",
+                f"{settings.TOCHKA_API_BASE}{BALANCES_PATH}",
                 headers={
                     "Authorization": f"Bearer {t.access_token}",
                     "Accept": "application/json",
@@ -307,49 +309,58 @@ async def fetch_accounts_raw(db: AsyncSession, company_id: int) -> httpx.Respons
 
     r = await _do(token)
     if r.status_code == 401:
-        logger.info("tochka: 401 from /accounts, refreshing user token")
+        logger.info("tochka: 401 from /balances, refreshing user token")
         token = await refresh_user_token(db, token)
         r = await _do(token)
     return r
 
 
 async def get_balances(db: AsyncSession, company_id: int) -> list[Balance]:
-    """Сходить в Точку, получить остатки и записать их в `balances`."""
+    """GET /balances → парсим Data.Balance[] с type=OpeningAvailable → balances."""
 
-    r = await fetch_accounts_raw(db, company_id)
+    r = await fetch_balances_raw(db, company_id)
     if r.status_code >= 400:
-        raise TochkaError(f"accounts API failed: HTTP {r.status_code} {r.text[:300]}")
+        raise TochkaError(f"/balances HTTP {r.status_code} {r.text[:300]}")
 
     payload = r.json()
     items: list[dict[str, Any]] = (
-        (payload.get("Data") or {}).get("Account")
-        or payload.get("accounts")
-        or payload.get("data")
+        (payload.get("Data") or {}).get("Balance")
+        or (payload.get("Data") or {}).get("balance")
+        or payload.get("balances")
         or []
     )
 
     saved: list[Balance] = []
+    skipped_no_match: list[str] = []
     for item in items:
-        account_number, amount = _parse_account(item)
-        if not account_number or amount is None:
+        item_type = item.get("type") or item.get("Type")
+        if item_type != CURRENT_BALANCE_TYPE:
             continue
+
+        account_id = item.get("accountId") or item.get("AccountId")
+        amount = _parse_balance_amount(item)
+        if not account_id or amount is None:
+            continue
+
+        amount_obj = item.get("Amount") or {}
+        currency = (
+            amount_obj.get("Currency") if isinstance(amount_obj, dict) else None
+        ) or "RUB"
+
         db_account = await db.scalar(
             select(Account).where(
                 Account.company_id == company_id,
-                Account.account_number == account_number,
+                Account.account_number == account_id,
             )
         )
         if db_account is None:
-            logger.warning(
-                "tochka: account %s not found in DB for company=%s",
-                account_number,
-                company_id,
-            )
+            skipped_no_match.append(account_id)
             continue
+
         b = Balance(
             account_id=db_account.id,
             amount=amount,
-            currency="RUB",
+            currency=currency,
             source=BalanceSource.API,
         )
         db.add(b)
@@ -357,9 +368,10 @@ async def get_balances(db: AsyncSession, company_id: int) -> list[Balance]:
 
     await db.flush()
     logger.info(
-        "tochka: company=%s, accounts in payload=%s, balances saved=%s",
+        "tochka: company=%s, items=%s, saved=%s, no_match=%s",
         company_id,
         len(items),
         len(saved),
+        skipped_no_match,
     )
     return saved

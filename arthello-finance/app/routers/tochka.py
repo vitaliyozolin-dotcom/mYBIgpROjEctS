@@ -19,11 +19,11 @@ from app.config import settings
 from app.database import get_db
 from app.models.company import Company
 from app.services.tochka import (
-    ACCOUNTS_PATH,
+    BALANCES_PATH,
     TochkaError,
     create_consent,
     exchange_code_for_token,
-    fetch_accounts_raw,
+    fetch_balances_raw,
     get_app_token,
     upsert_user_token,
 )
@@ -170,13 +170,13 @@ async def tochka_test_connection(
     company_slug: str = Query(default="atlas"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Тестовый запрос на /accounts с user-токеном — сырой ответ Точки."""
+    """Тестовый запрос на /balances с user-токеном — сырой ответ Точки."""
 
     _ensure_configured()
     company = await _resolve_company(db, company_slug)
 
     try:
-        response = await fetch_accounts_raw(db, company.id)
+        response = await fetch_balances_raw(db, company.id)
     except TochkaError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc))
 
@@ -194,7 +194,7 @@ async def tochka_test_connection(
     return {
         "request": {
             "method": "GET",
-            "url": f"{settings.TOCHKA_API_BASE}{ACCOUNTS_PATH}",
+            "url": f"{settings.TOCHKA_API_BASE}{BALANCES_PATH}",
         },
         "response": {
             "status_code": response.status_code,

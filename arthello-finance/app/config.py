@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     TOCHKA_AUTHORIZE_URL: str = Field(
         default="https://enter.tochka.com/connect/authorize"
     )
+    # Consents живут на /uapi/v1.0/, а не /uapi/open-banking/v1.0/ — отдельная URL.
+    TOCHKA_CONSENTS_URL: str = Field(
+        default="https://enter.tochka.com/uapi/v1.0/consents"
+    )
     TOCHKA_API_BASE: str = Field(
         default="https://enter.tochka.com/uapi/open-banking/v1.0"
     )
