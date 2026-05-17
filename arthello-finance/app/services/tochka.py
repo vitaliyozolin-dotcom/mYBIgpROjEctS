@@ -343,7 +343,6 @@ async def get_balances(db: AsyncSession, company_id: int) -> dict[str, Any]:
 
     db_account_numbers_result = await db.scalars(
         select(Account.account_number).where(
-            Account.company_id == company_id,
             Account.account_number.is_not(None),
         )
     )
@@ -375,7 +374,6 @@ async def get_balances(db: AsyncSession, company_id: int) -> dict[str, Any]:
 
         db_account = await db.scalar(
             select(Account).where(
-                Account.company_id == company_id,
                 Account.account_number == account_number_clean,
             )
         )
