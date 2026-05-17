@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account, AccountType, Bank
@@ -148,6 +148,20 @@ DDS_CATEGORIES: list[tuple[str, str, DDSType, int | None]] = [
     ("transfer_to_dbp", "Перевод на счёт ДБП", DDSType.TRANSFER, None),
     ("transfer_between", "Перевод между своими счетами", DDSType.TRANSFER, None),
     ("transfer_loan", "Инвестиции/займы от учредителя", DDSType.TRANSFER, None),
+]
+
+
+# Счета, по которым нет автоматической синхронизации с Точкой
+# (нет account_number или счёт не приходит в /balances).
+# Для них прописываем ручной нулевой остаток на сегодня, чтобы дашборд
+# не показывал устаревшие/невалидные данные.
+UNSYNCED_ACCOUNT_NAMES: list[str] = [
+    "Атлас Тбанк основной",
+    "Атлас касса нал",
+    "Лиственный Тбанк основной",
+    "Лиственный касса нал",
+    "УК касса нал",
+    "Школа 1-11 Точка основной",
 ]
 
 
@@ -407,6 +421,42 @@ async def _seed_balances(
     return added
 
 
+async def _seed_zero_balances_for_unsynced(
+    session: AsyncSession, name_to_id: dict[str, int]
+) -> int:
+    """Для счетов без автосинхронизации проставляем amount=0 на сегодня.
+
+    Идемпотентно: если запись Balance за сегодня для этого счёта уже есть —
+    дубль не добавляем.
+    """
+
+    added = 0
+    today = date.today()
+    for name in UNSYNCED_ACCOUNT_NAMES:
+        account_id = name_to_id.get(name)
+        if account_id is None:
+            continue
+        existing_today = await session.scalar(
+            select(Balance.id).where(
+                Balance.account_id == account_id,
+                func.date(Balance.recorded_at) == today,
+            ).limit(1)
+        )
+        if existing_today is not None:
+            continue
+        session.add(
+            Balance(
+                account_id=account_id,
+                amount=Decimal("0"),
+                currency="RUB",
+                source=BalanceSource.MANUAL,
+            )
+        )
+        added += 1
+    await session.flush()
+    return added
+
+
 async def _seed_payments(
     session: AsyncSession, slug_to_id: dict[str, int]
 ) -> int:
@@ -450,6 +500,7 @@ async def seed_all(session: AsyncSession) -> dict[str, int]:
     )
     dds_added = await _seed_dds_categories(session)
     balances_added = await _seed_balances(session, name_to_id)
+    zero_balances_added = await _seed_zero_balances_for_unsynced(session, name_to_id)
     payments_added = await _seed_payments(session, slug_to_id)
 
     return {
@@ -458,6 +509,7 @@ async def seed_all(session: AsyncSession) -> dict[str, int]:
         "accounts_updated": accounts_updated,
         "dds_categories": dds_added,
         "balances": balances_added,
+        "zero_balances_unsynced": zero_balances_added,
         "payment_queue": payments_added,
     }
 
